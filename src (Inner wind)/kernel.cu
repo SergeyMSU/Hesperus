@@ -13,10 +13,10 @@
 #define N 1024 // 7167 //1792 //1792                 // Количество ячеек по x
 #define M 2048  // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define x_max 10.0 //450.0
+#define x_max 6.0 //450.0
 #define x_min (x_max/(2.0 * N)) // -2760.0 // -2500.0 // -1300  //-2000                // -1500.0
-#define y_max 10.0 // 2250.0 // 1600.0 //1840.0
-#define y_min -10.0 // (y_max/(2.0 * M))  // -30.0 // (y_max/(2.0 * M)) 
+#define y_max 6.0 // 2250.0 // 1600.0 //1840.0
+#define y_min -6.0 // (y_max/(2.0 * M))  // -30.0 // (y_max/(2.0 * M)) 
 #define dx ((x_max)/(N))  // ((x_max - x_min)/(N - 1))     // Величина грани по dx
 #define dy ((y_max - y_min)/(M)) //  ((y_max - y_min)/(M - 1))     // Величина грани по dy
 
@@ -1726,9 +1726,9 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     *TT = *TT + *T_do;
     *T = 10000000;
     *i = *i + 1;
-    if (*i % 100 == 0)
+    if (*i % 1000 == 0)
     {
-        printf("i = %d,  TT = %lf, hours = %lf \n", *i, *TT, *TT * 1.09556);
+        printf("i = %d,  TT all = %lf, hours = %lf; dT hours = %lf \n", *i, *TT, *TT * 1.09556, *T_do * 1.09556);
     }
     return;
 }
@@ -1861,16 +1861,19 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
             {
                 if (true)
                 {
-                    // Vr и Vthe компоненты скорости сносим мягко
+                    // Vr компоненту скорости сносим мягко
+                    // Vthe фиксируем нулём
                     double Vr = (u_1.x * x + u_1.y * y) / dist;
-                    double Vthe = (u_1.x * y - u_1.y * x) / dist;
+                    double Vthe = 0.0;
+                    //double Vthe = (u_1.x * y - u_1.y * x) / dist;
                     u_3.x = (Vr * x3 + Vthe * y3) / r3;
                     u_3.y = (Vr * y3 - Vthe * x3) / r3;
                 }
 
                 if (true)
                 {
-                    // Bthe и Bphi компоненты магнитного поля сносим мягко
+                    // Br компонента фиксируется
+                    // Bthe сносится мягко
                     b_3.z = b_1.z;
                     double Br = (u_3.x * x3 + u_3.y * y3) / r3;
                     double Bthe = (b_1.x * y - b_1.y * x) / dist;
@@ -1893,7 +1896,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
                 {
                     // Vr и Vthe компоненты скорости сносим мягко
                     double Vr = (u_1.x * x + u_1.y * y) / dist;
-                    double Vthe = (u_1.x * y - u_1.y * x) / dist;
+                    double Vthe = 0.0;
+                    //double Vthe = (u_1.x * y - u_1.y * x) / dist;
                     u_4.x = (Vr * x4 + Vthe * y4) / r4;
                     u_4.y = (Vr * y4 - Vthe * x4) / r4;
                 }
@@ -1997,7 +2001,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     if (true)
     {
         double fr = 0.0;
-        fr = -0.175011 * s_1.x / kv(dist);  // Сила притяжения к звезде + радиационное отталкивание от континуума
+        fr = -0.0796436 * s_1.x / kv(dist);  // Сила притяжения к звезде + радиационное отталкивание от континуума
 
         if (true)
         {
@@ -2007,13 +2011,22 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
             double Vr5 = (u_5.x * x + u_5.y * (y + dy)) / sqrt(kvv(0.0, x, y + dy));
             double Vr4 = (u_4.x * (x - dx) + u_4.y * y) / sqrt(kvv(0.0, x - dx, y));
             double dVrdr = ((Vr2 - Vr4) / (2 * dx) * x + (Vr5 - Vr3) / (2 * dy) * y) / dist;
+            
+
+            //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
+            //double muc = sqrt(1.0 - 1.0 / kv(dist));
+            //double fD = (pow(1.0 + sigma, 1.6) - pow(1.0 + sigma * kv(muc), 1.6)) / (1.6 * (1.0 - kv(muc)) * sigma * pow(1.0 + sigma, 0.6));
+
+            //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
+
+            //double vth = sqrt(0.000223681);
             double vth = sqrt(0.000671042 * sqrt(1.0 / dist));
-            double tt = 0.202146 * s_1.x * vth;
-            double Mt = 0.2 * pow(fabs(dVrdr)/tt, 0.6);
-            fr += 0.0121565 * Mt / kv(dist);
-            if (fr > 1.0)
+            double tt = 18.1675 * s_1.x * vth;
+            double Mt = 0.5 * pow(fabs(dVrdr)/tt, 0.6);
+            fr += 0.00553216 * s_1.x * Mt / kv(dist);
+
+            if (dist > 3.0 && fr > 1.0)
             {
-                //printf("x = %lf, y = %lf, fr = %lf \n", x, y, fr);
                 fr = 1.0;
             }
         }
@@ -2074,7 +2087,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
 
 
-    s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
+    s2[index].y = 0.000223681 * s2[index].x;
+    //s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
     //s2[index].y = s2[index].x;
 }
 
@@ -2794,20 +2808,23 @@ int main(void)
         double vr = 0.001 + pow((1.0 - 1.0 / dist), 0.8);
         double vphi = 0.266667 * sin(the);
         double rho = 0.001 / vr / kv(dist);
-        double Br = 0.0237411;
+        double Br = 0.0237411 * 2.0;
         //if (the > pi / 2.0) Br = -Br;
 
 
-        host_s[k] = { rho, 0.000671042 * rho * sqrt(1.0 / dist) };
-        host_u[k] = { vr * x / dist, vr * y / dist, vphi};
+        // host_s[k] = { rho, 0.000671042 * rho * sqrt(1.0 / dist) };
+
+        host_s[k] = {1.0, 0.000223681};
+
+        //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
         // 
         // host_s[k] = { 1.0, 1.0};
-        // host_u[k] = { 0.0, 0.0 };
+        host_u[k] = { 0.0, 0.0, 0.0 };
 
         host_s2[k] = host_s[k];
         host_u2[k] = host_u[k];
-        host_b[k] = { Br * x / dist, Br * y / dist, 0.0 };
-        //host_b[k] = { 0.0, 0.0, 0.0 };
+        //host_b[k] = { Br * x / dist, Br * y / dist, 0.0 };
+        host_b[k] = { 0.0, 0.0, 0.0 };
         host_b2[k] = host_b[k];
     }
     cout << "Initial conditions: end" << endl;
@@ -2889,7 +2906,7 @@ int main(void)
     int meth = 2;  // Laks метода нет! Нужно сделать
 
     // NO TVD
-    for (int i = 0; i < 6000; i = i + 2)  // Сколько шагов по времени делаем?
+    for (int i = 0; i < 5000; i = i + 2)  // Сколько шагов по времени делаем?
     {
         if (i % 5000 == 0)
         {
@@ -3082,7 +3099,7 @@ int main(void)
 
     int nn = (int)((N + Nmin - 1) / Nmin);
     int mm = (int)((M + Nmin - 1) / Nmin);
-    fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"T\",  ZONE T = \"HP\", N = " << nn * mm //
+    fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\", N = " << nn * mm //
         << " , E = " << (nn - 1)*(mm - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
 
@@ -3134,12 +3151,16 @@ int main(void)
         int nn2 = (m) * N + n - 1;
 
         
-        double Max = 0.0, Temp = 0.0;
+        double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
         if (host_s[k].x > 0.0)
         {
-            Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y) / (ggg * host_s[k].y / host_s[k].x));
+            Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
             Temp = host_s[k].y / host_s[k].x;
+            Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
         }
+
+        Max_alf = 0.0;
 
         double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
         double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
@@ -3149,7 +3170,7 @@ int main(void)
         fout5 << x << " " << y << " " << host_s[k].x << " " << host_s[k].y <<//
             " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z << 
             " " << host_b[k].x << " " << host_b[k].y << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
-            Max << " " << Temp <<  endl;
+            Max << " " << Max_alf << " " << Temp << endl;
     }
 
     for (int k = 0; k < nn * mm; k = k + 1)
