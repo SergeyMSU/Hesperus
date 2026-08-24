@@ -13,10 +13,10 @@
 #define N 1024 // 7167 //1792 //1792                 //  оличество €чеек по x
 #define M 2048  // //1280 //1280                 //  оличество €чеек по y
 #define K (N*M)                //  оличество €чеек в сетке
-#define x_max 4.0 //450.0
+#define x_max 10.0 //450.0
 #define x_min (x_max/(2.0 * N)) // -2760.0 // -2500.0 // -1300  //-2000                // -1500.0
-#define y_max 4.0 // 2250.0 // 1600.0 //1840.0
-#define y_min -4.0 // (y_max/(2.0 * M))  // -30.0 // (y_max/(2.0 * M)) 
+#define y_max 10.0 // 2250.0 // 1600.0 //1840.0
+#define y_min -10.0 // (y_max/(2.0 * M))  // -30.0 // (y_max/(2.0 * M)) 
 #define dx ((x_max)/(N))  // ((x_max - x_min)/(N - 1))     // ¬еличина грани по dx
 #define dy ((y_max - y_min)/(M)) //  ((y_max - y_min)/(M - 1))     // ¬еличина грани по dy
 
@@ -1726,9 +1726,9 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     *TT = *TT + *T_do;
     *T = 10000000;
     *i = *i + 1;
-    if (*i % 5000 == 0)
+    if (*i % 100 == 0)
     {
-        printf("i = %d,  TT = %lf \n", *i, *TT);
+        printf("i = %d,  TT = %lf, hours = %lf \n", *i, *TT, *TT * 1.09556);
     }
     return;
 }
@@ -1742,12 +1742,6 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     double y = y_min + m * dy; // (y_max - y_min) / (M - 1);
     double x = x_min + n * dx; // (x_max - x_min) / (N - 1);
     double dist = sqrt(x * x + y * y);
-    int sign_y = 1;
-    if (y < 0.0)
-    {
-        sign_y = -1;
-    }
-    y = fabs(y);
 
     double2 s_1, s_2, s_3, s_4, s_5;      // ѕеременные всех соседей и самой €чейки
     double3 u_1, u_2, u_3, u_4, u_5;      // ѕеременные всех соседей и самой €чейки
@@ -1771,13 +1765,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     b_1 = b[index];
 
 
-   /* double ss = 3.0;
-    if (i > 20000)
-    {
-        ss = 2.0;
-    }*/
 
-    if ( (dist < ddist))  // ∆Єсткие граничные услови€
+    if (dist <= 1.0)
     {
         // ¬ этих €чейках значени€ параметров зафиксированы и не мен€ютс€ с течением времени)
         s2[index] = s_1;
@@ -1786,27 +1775,15 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         return;
     }
 
-    //if ((y > 16.0)&&(i%100 == 0))  // ∆Єсткие граничные услови€
-    //{
-    //    // ¬ этих €чейках значени€ параметров зафиксированы и не мен€ютс€ с течением времени)
-    //    s2[index] = { 1.0, 1.0 / ggg };
-    //    u2[index] = { 0.0, 0.0 };
-    //    b2[index] = b_1;
-    //    return;
-    //}
 
 
-    if ((m == M - 1))
+    if ((m == M - 1)) 
     {
-        /*s_5 = s_1;
+        //  райн€€ €чейка сверху области
+
+        // м€гкие услови€
+        s_5 = s_1;
         u_5 = u_1;
-        if (u_5.y < 0)
-        {
-            u_5.y = 0.001;
-        }
-        b_5 = b_1;*/
-        s_5 = { 1.0, 1.0 / ggg };
-        u_5 = { 0.0, 0.0 };
         b_5 = b_1;
     }
     else
@@ -1818,12 +1795,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
     if ((n == N - 1))
     {
+        // крайн€€ €чейка справа области
+
+        // м€гкие услови€
         s_2 = s_1;
         u_2 = u_1;
-        if (u_2.x < 0)
-        {
-            u_2.x = 0.01;
-        }
         b_2 = b_1;
     }
     else
@@ -1833,18 +1809,19 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         b_2 = b[(m) * N + n + 1];
     }
 
+
     if (n == 0)
     {
-        /*s_5 = { 1.0, 1.0 / ggg };
-        u_5 = { 0.0, 0.0 };
-        b_5 = b_1;*/
+        // кра€н€€ €чейка слева области
 
+        // симметри€
         s_4 = s_1;
-        u_4.y = u_1.y;
+        u_4 = u_1;
+        b_4 = b_1;
         u_4.x = -u_1.x;
+        u_4.z = -u_1.z;
         b_4.x = -b_1.x;
-        b_4.y = -b_1.y;
-        b_4.z = b_1.z;
+        b_4.z = -b_1.z;
     }
     else
     {
@@ -1855,24 +1832,12 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
     if ((m == 0))
     {
-        if (false)
-        {
-            s_5 = { 1.0, 1.0 / ggg };
-            u_5 = { 0.0, 0.0 };
-            b_5 = b_1;
-        }
-        else
-        {
-            s_3 = s_1;
-            u_3.x = u_1.x;
-            u_3.y = -u_1.y;
-            //u_3.y = 0.0;
-            //b_3.x = -b_1.x;
-            b_3.x = b_1.x;
-            b_3.y = b_1.y;
-            b_3.z = -b_1.z;
-            //b_3.z = 0.0;
-        }
+        // кра€н€€ €чейка снизу области
+
+        // м€гкие услови€
+        s_3 = s_1;
+        u_3 = u_1;
+        b_3 = b_1;
     }
     else
     {
@@ -1881,60 +1846,89 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         b_3 = b[(m - 1) * N + (n)];
     }
 
-    double2 sss;
-    double3 bbb;
-
-    if (sign_y == -1)
+    
+    // “еперь задаЄм граничные услови€ на поверхности источника (нужно подправить те, которые должны б€ть м€гкими
+    if (true)
     {
-        sss = s_5;
-        s_5 = s_3;
-        s_3 = sss;
+        // точка снизу
+        if (true)
+        {
+            double x3, y3, r3;
+            x3 = x;
+            y3 = y - dy;
+            r3 = sqrt(x3 * x3 + y3 * y3);
+            if (r3 <= 1.0)
+            {
+                if (true)
+                {
+                    // Vr и Vthe компоненты скорости сносим м€гко
+                    double Vr = (u_1.x * x + u_1.y * y) / dist;
+                    double Vthe = (u_1.x * y - u_1.y * x) / dist;
+                    u_3.x = (Vr * x3 + Vthe * y3) / r3;
+                    u_3.y = (Vr * y3 - Vthe * x3) / r3;
+                }
 
-        bbb = u_5;
-        u_5 = u_3;
-        u_3 = bbb;
+                if (true)
+                {
+                    // Bthe и Bphi компоненты магнитного пол€ сносим м€гко
+                    b_3.z = b_1.z;
+                    double Br = (u_3.x * x3 + u_3.y * y3) / r3;
+                    double Bthe = (b_1.x * y - b_1.y * x) / dist;
+                    b_3.x = (Br * x3 + Bthe * y3) / r3;
+                    b_3.y = (Br * y3 - Bthe * x3) / r3;
+                }
+            }
+        }
 
-        bbb = b_5;
-        b_5 = b_3;
-        b_3 = bbb;
+        // точка слева
+        if (true)
+        {
+            double x4, y4, r4;
+            x4 = x - dx;
+            y4 = y;
+            r4 = sqrt(x4 * x4 + y4 * y4);
+            if (r4 <= 1.0)
+            {
+                if (true)
+                {
+                    // Vr и Vthe компоненты скорости сносим м€гко
+                    double Vr = (u_1.x * x + u_1.y * y) / dist;
+                    double Vthe = (u_1.x * y - u_1.y * x) / dist;
+                    u_4.x = (Vr * x4 + Vthe * y4) / r4;
+                    u_4.y = (Vr * y4 - Vthe * x4) / r4;
+                }
 
-        u_1.y = u_1.y * sign_y;
-        u_2.y = u_2.y * sign_y;
-        u_3.y = u_3.y * sign_y;
-        u_4.y = u_4.y * sign_y;
-        u_5.y = u_5.y * sign_y;
-
-        b_1.y = b_1.y * sign_y;
-        b_2.y = b_2.y * sign_y;
-        b_3.y = b_3.y * sign_y;
-        b_4.y = b_4.y * sign_y;
-        b_5.y = b_5.y * sign_y;
-
-        b_1.z = b_1.z * sign_y;
-        b_2.z = b_2.z * sign_y;
-        b_3.z = b_3.z * sign_y;
-        b_4.z = b_4.z * sign_y;
-        b_5.z = b_5.z * sign_y;
+                if (true)
+                {
+                    // Bthe и Bphi компоненты магнитного пол€ сносим м€гко
+                    b_4.z = b_1.z;
+                    double Br = (u_4.x * x4 + u_4.y * y4) / r4;
+                    double Bthe = (b_1.x * y - b_1.y * x) / dist;
+                    b_4.x = (Br * x4 + Bthe * y4) / r4;
+                    b_4.y = (Br * y4 - Bthe * x4) / r4;
+                }
+            }
+        }
     }
 
-    
 
     double Q = 1.0;
     double PQ = 0.0;
     double2 PS = { 0.0, 0.0 };
-    double2 PU = { 0.0, 0.0 };
+    double3 PU = { 0.0, 0.0, 0.0 };
     double3 PB = { 0.0, 0.0, 0.0 };
     double Pdiv = 0.0;
 
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z, s_2.x, Q, s_2.y, //
-        u_2.x, u_2.y, 0.0, b_2.x, b_2.y, b_2.z, P, PQ, 1.0, 0.0, 0.0, dx, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, u_1.z, b_1.x, b_1.y, b_1.z, s_2.x, Q, s_2.y, //
+        u_2.x, u_2.y, u_2.z, b_2.x, b_2.y, b_2.z, P, PQ, 1.0, 0.0, 0.0, dx, method, x, y));
     
     
     PS.x = PS.x + P[0] * dy;
     PS.y = PS.y + P[7] * dy;
     PU.x = PU.x + P[1] * dy;
     PU.y = PU.y + P[2] * dy;
+    PU.z = PU.z + P[3] * dy;
     PB.x = PB.x + P[4] * dy;
     PB.y = PB.y + P[5] * dy;
     PB.z = PB.z + P[6] * dy;
@@ -1943,13 +1937,14 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z, s_3.x, Q, s_3.y, //
-        u_3.x, u_3.y, 0.0, b_3.x, b_3.y, b_3.z, P, PQ, 0.0, -1.0, 0.0, dy, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, u_1.z, b_1.x, b_1.y, b_1.z, s_3.x, Q, s_3.y, //
+        u_3.x, u_3.y, u_3.z, b_3.x, b_3.y, b_3.z, P, PQ, 0.0, -1.0, 0.0, dy, method, x, y));
     
     PS.x = PS.x + P[0] * dx;
     PS.y = PS.y + P[7] * dx;
     PU.x = PU.x + P[1] * dx;
     PU.y = PU.y + P[2] * dx;
+    PU.z = PU.z + P[3] * dx;
     PB.x = PB.x + P[4] * dx;
     PB.y = PB.y + P[5] * dx;
     PB.z = PB.z + P[6] * dx;
@@ -1957,14 +1952,15 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z, s_4.x, Q, s_4.y, //
-        u_4.x, u_4.y, 0.0, b_4.x, b_4.y, b_4.z, P, PQ, -1.0, 0.0, 0.0, dx, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, u_1.z, b_1.x, b_1.y, b_1.z, s_4.x, Q, s_4.y, //
+        u_4.x, u_4.y, u_4.z, b_4.x, b_4.y, b_4.z, P, PQ, -1.0, 0.0, 0.0, dx, method, x, y));
     
     
     PS.x = PS.x + P[0] * dy;
     PS.y = PS.y + P[7] * dy;
     PU.x = PU.x + P[1] * dy;
     PU.y = PU.y + P[2] * dy;
+    PU.z = PU.z + P[3] * dy;
     PB.x = PB.x + P[4] * dy;
     PB.y = PB.y + P[5] * dy;
     PB.z = PB.z + P[6] * dy;
@@ -1972,14 +1968,15 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z, s_5.x, Q, s_5.y, //
-        u_5.x, u_5.y, 0.0, b_5.x, b_5.y, b_5.z, P, PQ, 0.0, 1.0, 0.0, dy, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(s_1.x, Q, s_1.y, u_1.x, u_1.y, u_1.z, b_1.x, b_1.y, b_1.z, s_5.x, Q, s_5.y, //
+        u_5.x, u_5.y, u_5.z, b_5.x, b_5.y, b_5.z, P, PQ, 0.0, 1.0, 0.0, dy, method, x, y));
     
     
     PS.x = PS.x + P[0] * dx;
     PS.y = PS.y + P[7] * dx;
     PU.x = PU.x + P[1] * dx;
     PU.y = PU.y + P[2] * dx;
+    PU.z = PU.z + P[3] * dx;
     PB.x = PB.x + P[4] * dx;
     PB.y = PB.y + P[5] * dx;
     PB.z = PB.z + P[6] * dx;
@@ -1994,13 +1991,43 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
     double dV = dx * dy;
 
+    double Fx = 0.0, Fy = 0.0;
 
-    Pdiv = Pdiv + dV * b_1.y / y;
+    // ¬ычисл€ем силы
+    if (true)
+    {
+        double fr = 0.0;
+        fr = -0.175011 * s_1.x / kv(dist);  // —ила прит€жени€ к звезде + радиационное отталкивание от континуума
+
+        if (true)
+        {
+            // Line-driven force
+            double Vr2 = (u_2.x * (x + dx) + u_2.y * y) / sqrt(kvv(0.0, x + dx, y));
+            double Vr3 = (u_3.x * x + u_3.y * (y - dy)) / sqrt(kvv(0.0, x, y - dy));
+            double Vr5 = (u_5.x * x + u_5.y * (y + dy)) / sqrt(kvv(0.0, x, y + dy));
+            double Vr4 = (u_4.x * (x - dx) + u_4.y * y) / sqrt(kvv(0.0, x - dx, y));
+            double dVrdr = ((Vr2 - Vr4) / (2 * dx) * x + (Vr5 - Vr3) / (2 * dy) * y) / dist;
+            double vth = sqrt(0.000671042 * sqrt(1.0 / dist));
+            double tt = 0.202146 * s_1.x * vth;
+            double Mt = 0.2 * pow(fabs(dVrdr)/tt, 0.6);
+            fr += 0.0121565 * Mt / kv(dist);
+            if (fr > 1.0)
+            {
+                //printf("x = %lf, y = %lf, fr = %lf \n", x, y, fr);
+                fr = 1.0;
+            }
+        }
+
+        Fx = fr * x / dist;
+        Fy = fr * y / dist;
+    }
+
+
+    Pdiv = Pdiv + dV * b_1.x / x;
     //Pdiv = 0.0;
 
 
-    s2[index].x = s_1.x - *T_do * PS.x / dV - *T_do * s_1.x * u_1.y / y;
-    //s2[index].x = s_1.x - (*T_do / dV) * PS.x - *T_do * s_1.x * u_1.y / y;
+    s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
     //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // ¬ декартовых координатах
     if (s2[index].x <= 0)
     {
@@ -2021,39 +2048,34 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
 
     //s2[index].x = s_1.x - *T_do * PS.x / dV - *T_do * s_1.x * u_1.y / y;
-    u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y /cpi4)/y ) / s2[index].x;
-    /*if (u2[index].x < 0.0)
-    {
-        u2[index].x = 0.0;
-    }*/
-    u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
-    b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV - *T_do*(u_1.y * b_1.x - b_1.y * u_1.x)/y);
-    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
-    b2[index].z = (b_1.z - *T_do * (PB.z) / dV );
-    s2[index].y = (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) - *T_do * (PS.y + (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv)//
-        / dV - *T_do * ( ( (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8)* u_1.y - b_1.y * skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z)/cpi4)/ y) //
-        - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y /cpi4)/y ) / s2[index].x;
+
+    //double Smr = (s_1.x * kv(u_1.z) - kv(b_1.z) / cpi4 - (s_1.x * kv(u_1.x) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8 - kv(b_1.x) / cpi4)) / x;
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * Smr + *T_do * Fx) / s2[index].x;
+    
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.x) + kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+    u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * (s_1.x * ( kv(u_1.z) - kv(u_1.x)) + (kv(b_1.x) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
 
 
-    if (sign_y < 0.0)
-    {
-        u2[index].y = u2[index].y * sign_y;
-        b2[index].y = b2[index].y * sign_y;
-        b2[index].z = b2[index].z * sign_y;
-    }
+
+    //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
+    u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y / cpi4) / x + *T_do * Fy) / s2[index].x;
+
+    u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - b_1.x * b_1.z / cpi4) / x) / s2[index].x;
+
+    //b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV - *T_do*(u_1.y * b_1.x - b_1.y * u_1.x)/y);
+    b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
+    //b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
+    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * b_1.y - b_1.x * u_1.y) / x);
+    b2[index].z = b_1.z - *T_do * (PB.z + u_1.z * Pdiv) / dV;
+
+    //s2[index].y = (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) - *T_do * (PS.y + (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv)//
+    //    / dV - *T_do * ( ( (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8)* u_1.y - b_1.y * skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z)/cpi4)/ y) //
+    //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
 
 
-    //¬ декартовой системе
-    //u2[index].x = (s_1.x * u_1.x - (*T_do / dV) * PU.x ) / s2[index].x;
-    //u2[index].y = (s_1.x * u_1.y - (*T_do / dV) * PU.y) / s2[index].x;
-
-    //s2[index].y = ( ( (s_1.y / (ggg - 1) + s_1.x * (u_1.x * u_1.x + u_1.y * u_1.y) * 0.5) - (*T_do / dV) * PS.y ) - //
-    //    0.5 * s2[index].x * (u2[index].x * u2[index].x + u2[index].y * u2[index].y)) * (ggg - 1);
-
-    if (s2[index].y <= 0)
-    {
-        s2[index].y = 0.000001;
-    }
+    s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
+    //s2[index].y = s2[index].x;
 }
 
 __global__ void Kernel_TVD(double2* s, double3* u, double3* b, double2* s2, double3* u2, double3* b2, double* T, double* T_do, int i, int method)
@@ -2767,20 +2789,25 @@ int main(void)
         double x = x_min + n * dx;
 
         double dist = sqrt(x * x + y * y);
-        double the = atan(x/y);
+        double the = polar_angle(y, x);
         dist = max(dist, 1.0000000001);
-        double vr = 0.002 + pow((1.0 - 1.0 / dist), 0.8);
+        double vr = 0.001 + pow((1.0 - 1.0 / dist), 0.8);
         double vphi = 0.266667 * sin(the);
-        double rho = 0.002 / vr / kv(dist);
+        double rho = 0.001 / vr / kv(dist);
         double Br = 0.0237411;
-        if (the > pi / 2.0) Br = -Br;
+        //if (the > pi / 2.0) Br = -Br;
 
 
-        host_s[k] = { rho, 0.000223681 * rho * sqrt(1.0 / dist) };
+        host_s[k] = { rho, 0.000671042 * rho * sqrt(1.0 / dist) };
         host_u[k] = { vr * x / dist, vr * y / dist, vphi};
+        // 
+        // host_s[k] = { 1.0, 1.0};
+        // host_u[k] = { 0.0, 0.0 };
+
         host_s2[k] = host_s[k];
         host_u2[k] = host_u[k];
         host_b[k] = { Br * x / dist, Br * y / dist, 0.0 };
+        //host_b[k] = { 0.0, 0.0, 0.0 };
         host_b2[k] = host_b[k];
     }
     cout << "Initial conditions: end" << endl;
@@ -2859,10 +2886,10 @@ int main(void)
     cout << "START" << endl;
 
 
-    int meth = 2;  // HLL метода нет! Ќужно сделать
+    int meth = 2;  // Laks метода нет! Ќужно сделать
 
     // NO TVD
-    for (int i = 0; i < 0; i = i + 2)  // —колько шагов по времени делаем?
+    for (int i = 0; i < 6000; i = i + 2)  // —колько шагов по времени делаем?
     {
         if (i % 5000 == 0)
         {
@@ -3012,10 +3039,10 @@ int main(void)
     if (device)
     {
         cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
-        cudaMemcpy(host_u, u, size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
         cudaMemcpy(host_b, b, size2, cudaMemcpyDeviceToHost);
         cudaMemcpy(host_s2, s2, size, cudaMemcpyDeviceToHost);
-        cudaMemcpy(host_u2, u2, size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(host_u2, u2, size2, cudaMemcpyDeviceToHost);
         cudaMemcpy(host_b2, b2, size2, cudaMemcpyDeviceToHost);
         cudaMemcpy(host_T, T, sizeof(double), cudaMemcpyDeviceToHost);
         cudaMemcpy(host_TT, TT, sizeof(double), cudaMemcpyDeviceToHost);

@@ -1077,6 +1077,8 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double UU = max(fabs(SL), fabs(SR));
     double time = krit * rad / UU;
 
+
+
     double FL[9], FR[9], UL[9], UR[9];
 
     double e1 = p_L / g1 + ro_L * uu_L + bb_L / 2.0;
@@ -1134,6 +1136,56 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double Q_LL = Q_L * (SL - u1) / (SL - SM);
     double Q_RR = Q_R * (SR - u2) / (SR - SM);
 
+    if (metod == 1)   // HLL
+    {
+        double dq[9];
+        for (int ik = 0; ik < 9; ik++)
+        {
+            dq[ik] = UR[ik] - UL[ik];
+        }
+
+        double TL = SL;
+        double TR = SR;
+        if (SL > 0.0)
+        {
+            TL = 0.0;
+        }
+        if (SR < 0.0)
+        {
+            TR = 0.0;
+        }
+
+        double a = TR * TL;
+        double b = TR - TL;
+
+        double  PO[9];
+        for (int i = 0; i < 9; i++)
+        {
+            PO[i] = TR * FL[i] - TL * FR[i] + a * dq[i];
+        }
+
+        double SN = max(fabs(SL), fabs(SR));
+
+        PO[5] = -SN * (bn2 - bn1);
+
+        P[1] = n1 * PO[1] + t1 * PO[2] + m1 * PO[3];
+        P[2] = n2 * PO[1] + t2 * PO[2] + m2 * PO[3];
+        P[3] = n3 * PO[1] + t3 * PO[2] + m3 * PO[3];
+        P[5] = spi4 * (n1 * PO[5] + t1 * PO[6] + m1 * PO[7]);
+        P[6] = spi4 * (n2 * PO[5] + t2 * PO[6] + m2 * PO[7]);
+        P[7] = spi4 * (n3 * PO[5] + t3 * PO[6] + m3 * PO[7]);
+        P[0] = PO[0];
+        P[4] = PO[4];
+        PQ = PO[8];
+
+        double SWAP = P[4];
+        P[4] = P[5];
+        P[5] = P[6];
+        P[6] = P[7];
+        P[7] = SWAP;
+        return time;
+
+    }
     if (metod == 2)   // HLLC  + mgd
     {
         double sbv1 = u1 * bn1 + v1 * bt1 + w1 * bm1;
