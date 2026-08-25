@@ -31,7 +31,11 @@
 #define DR(i) (DR1 * pow(qb, (i)))
 
 // Радиус центра i-й ячейки (i = 0..N-1)
-#define R_CENTER(i) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
+#define R_CENTER(i) ( (2.0/3.0) * \
+                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
+                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
+                        (sin(0.5 * dphi) / (0.5 * dphi)) )
+//#define R_CENTER(i) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
 
 // ----------------- Угловое разбиение -----------------
 
@@ -65,12 +69,18 @@
 
 
 #define const_p (0.000223681)     // p = const_p * rho
-#define v_in (0.002)     // p = const_p * rho
-#define F_grav (-0.187168/14.0)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0121565)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (20.2146)     // Коэффициент внутри line-driven силы
+#define v_in (0.000666667)     // p = const_p * rho
+#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0225764)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line (0.606439)     // Коэффициент внутри line-driven силы
+#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
+#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
 
+#define DERIVATIVE(f_left, f_center, f_right, hL, hR) \
+    ( - (hR) / ((hL) * ((hL) + (hR))) * (f_left) \
+      + ((hR) - (hL)) / ((hL) * (hR)) * (f_center) \
+      + (hL) / ((hR) * ((hL) + (hR))) * (f_right) )
 
 #define x_max 6.0 //450.0
 #define x_min (x_max/(2.0 * N)) // -2760.0 // -2500.0 // -1300  //-2000                // -1500.0
@@ -1881,7 +1891,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         double x4, y4;
         x4 = 1.0 * cos(phi);
         y4 = 1.0 * sin(phi);
-        // краяняя ячейка слева области
+        // крайняя ячейка слева области
         s_4 = {1.0, const_p};
 
         double Vr = v_in; //  (u_1.x * x + u_1.y * y) / r;
@@ -1945,6 +1955,10 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     double Vr, Vphi;
     double u_L, v_L, u_R, v_R;
 
+    double Vr1, Vr2, Vr4, dr2, dr4;
+    dr2 = r2 - r;
+    dr4 = r - r4;
+
 
     // Перед распадом надо определить нормаль к грани и разложить все вектора (скорости и магнитного поля) по этой нормали
     // Также предлагаю снести на грань с двух сторон все значения в полярной системе координат
@@ -1964,11 +1978,13 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     p_R = s_2.y * kv(r2 / r_g);
 
     Vr = u_1.x * cos(phi) + u_1.y * sin(phi);
+    Vr1 = Vr;
     Vphi = -u_1.x * sin(phi) + u_1.y * cos(phi);
     u_L = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_L = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
     Vr = u_2.x * cos(phi2) + u_2.y * sin(phi2);
+    Vr2 = Vr;
     Vphi = -u_2.x * sin(phi2) + u_2.y * cos(phi2);
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
@@ -2014,6 +2030,15 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
+    if (m == 0)
+    {
+        u_R = -u_L;
+        v_R = v_L;
+        rho_R = rho_L;
+        p_R = p_L;
+    }
+
+
 
     tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x, b_1.y, b_1.z, rho_R, Q, p_R, //
         u_R, v_R, u_3.z, b_3.x, b_3.y, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
@@ -2050,6 +2075,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     v_L = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
     Vr = u_4.x * cos(phi4) + u_4.y * sin(phi4);
+    Vr4 = Vr;
     Vphi = -u_4.x * sin(phi4) + u_4.y * cos(phi4);
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
@@ -2136,11 +2162,15 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         if (true)
         {
             // Line-driven force
-            double Vr2 = (u_2.x * (x + dx) + u_2.y * y) / sqrt(kvv(0.0, x + dx, y));
-            double Vr3 = (u_3.x * x + u_3.y * (y - dy)) / sqrt(kvv(0.0, x, y - dy));
-            double Vr5 = (u_5.x * x + u_5.y * (y + dy)) / sqrt(kvv(0.0, x, y + dy));
-            double Vr4 = (u_4.x * (x - dx) + u_4.y * y) / sqrt(kvv(0.0, x - dx, y));
-            double dVrdr = ((Vr2 - Vr4) / (2 * dx) * x + (Vr5 - Vr3) / (2 * dy) * y) / r;
+            //double Vr2 = (u_2.x * (x + dx) + u_2.y * y) / sqrt(kvv(0.0, x + dx, y));
+            //double Vr3 = (u_3.x * x + u_3.y * (y - dy)) / sqrt(kvv(0.0, x, y - dy));
+            //double Vr5 = (u_5.x * x + u_5.y * (y + dy)) / sqrt(kvv(0.0, x, y + dy));
+            //double Vr4 = (u_4.x * (x - dx) + u_4.y * y) / sqrt(kvv(0.0, x - dx, y));
+            //double dVrdr = ((Vr2 - Vr4) / (2 * dx) * x + (Vr5 - Vr3) / (2 * dy) * y) / r;
+
+
+            //double dVrdr = DERIVATIVE(Vr4, Vr1, Vr2, dr4, dr2);
+            double dVrdr = (Vr2 - Vr1) / dr2;
             
 
             //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
@@ -2149,16 +2179,22 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
             //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
 
-            double vth = sqrt(const_p);
-            //double vth = sqrt(0.000671042 * sqrt(1.0 / dist));
+
+            //double vth = sqrt(const_p);
+            double vth = sqrt(const_p * sqrt(1.0 / r));
             double tt = F_line * s_1.x * vth;
-            double Mt = 0.5 * pow(fabs(dVrdr)/tt, 0.6);
+            double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
             fr += F_continuum * s_1.x * Mt / kv(r);
 
-            if (r > 3.0 && fr > 1.0)
-            {
-                fr = 1.0;
-            }
+            //if (r > 3.0 && fr > 1.0)
+            //{
+            //    fr = 1.0;
+            //}
+        }
+
+        if (fr < 0.0 && Vr1 <= 0.0)
+        {
+            fr = 0.000001;
         }
 
         Fx = fr * x / r;
@@ -2217,7 +2253,10 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
 
 
-    s2[index].y = const_p * s2[index].x;
+    s2[index].y = const_p * s2[index].x * sqrt(1.0 / r);
+    //s2[index].y = const_p * s2[index].x;
+
+
     //s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
     //s2[index].y = s2[index].x;
 }
@@ -2889,9 +2928,9 @@ int main(void)
     //test_polar_geometry();
     //return 0;
 
-    string name1 = "save_1(512x256).bin";   // Откуда скачиваем
-    string name2 = "save_1(512x256).bin";   // Куда сохраняем
-    int all_step = 20000 * 3 * 30;
+    string name1 = "save_2(512x256).bin";   // Откуда скачиваем
+    string name2 = "save_3(512x256).bin";   // Куда сохраняем
+    int all_step = 20000 * 10;
 
 
     double2* host_s;
@@ -2981,7 +3020,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3382,6 +3421,51 @@ int main(void)
     }
 
     cout << "Mass rashod = " << 315.36 * 5.48177 * Mas << " x 10^-6 MasSolar / year" << endl;
+
+
+    // Печатаем 1д файл
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_r.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\"" << endl;
+
+        for (int i = 0; i < N - 1; i++)
+        {
+            int j = int(M / 2);
+            int k = j * N + i;
+            double r = R_CENTER(i);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+
+            double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
+            if (host_s[k].x > 0.0)
+            {
+                Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
+                Temp = host_s[k].y / host_s[k].x;
+                Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                    sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+            }
+
+            Max_alf = 0.0;
+
+            double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
+            double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
+            double Br = (host_b[k].x * x + host_b[k].y * y) / sqrt(x * x + y * y);
+            double Bthe = (host_b[k].x * y - host_b[k].y * x) / sqrt(x * x + y * y);
+
+            fout1dr << r << " " << host_s[k].x << " " << host_s[k].y <<//
+                " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
+                " " << host_b[k].x << " " << host_b[k].y << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+                Max << " " << Max_alf << " " << Temp << endl;
+        }
+
+        fout1dr.close();
+    }
 
     return 0;
 }
