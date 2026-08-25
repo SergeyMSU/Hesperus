@@ -975,15 +975,16 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double by_R = By_R / spi4;
     double bz_R = Bz_R / spi4;
 
-    double t1 = 0.0;
-    double t2 = 0.0;
+    double t1 = -n2;
+    double t2 = n1;
     double t3 = 0.0;
 
     double m1 = 0.0;
     double m2 = 0.0;
-    double m3 = 0.0;
+    double m3 = 1.0;
 
-    if (n1 > 0.1)
+    // Ќадо правильно определить все вектора базиса
+    /*if (n1 > 0.1)
     {
         t2 = 1.0;
         m3 = 1.0;
@@ -1016,7 +1017,7 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     else
     {
         printf("EROROR 1421  normal_error\n");
-    }
+    }*/
 
 
     double u1, v1, w1, u2, v2, w2;
