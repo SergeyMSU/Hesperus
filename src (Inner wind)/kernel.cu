@@ -10,8 +10,8 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 512 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256  // //1280 //1280                 // Количество ячеек по y
+#define N 256 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 120 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (6.0)             // Внешний радиус сетки
 #define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
@@ -68,13 +68,18 @@
 #define CELL_AREA(i) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * dphi)
 
 
-#define const_p (0.000223681)     // p = const_p * rho
-#define v_in (0.000666667)     // p = const_p * rho
-#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0225764)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.606439)     // Коэффициент внутри line-driven силы
-#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
-#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
+#define const_p 0.000155623  // (0.000447362)     // p = const_p * rho
+#define rho_in 1.0 // (0.220637)     // p = const_p * rho
+#define F_grav (-0.135399)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0570027)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line (0.0276084)     // Коэффициент внутри line-driven силы
+//#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
+//#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
+
+#define alpha_line (0.65) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+
+#define Bo_init 0.00153551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define V_phi_init (0.0) // (0.266667)
 
 
 #define DERIVATIVE(f_left, f_center, f_right, hL, hR) \
@@ -1892,22 +1897,49 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         x4 = 1.0 * cos(phi);
         y4 = 1.0 * sin(phi);
         // крайняя ячейка слева области
-        s_4 = {1.0, const_p};
 
-        double Vr = v_in; //  (u_1.x * x + u_1.y * y) / r;
+        double Vr;
+        // double Vr = (u_1.x * x + u_1.y * y) / r;   // Попробуем снести скорость мягко (можно потом попробовать вторым порядком даже)
+        // 
+        // 
+        // линейный снос Vr
+        double Vr1 = (u_1.x * x + u_1.y * y) / r;
+        double Vr2 = u_2.x * cos(phi2) + u_2.y * sin(phi2);
+        Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
+        if (Vr < 0.00001) Vr = 0.00001;
+
+        if (Vr <= 0.0) Vr = 0.0;
+
         double Vthe = 0.0;
-        double vphi = 0.0; //  0.266667 * sin(pi / 2.0 - phi);
+        //Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
 
+        // Если поле сильное, нужно сносить Vthe
+        //if (kvv(b_1.x, b_1.y, b_1.z) / (8.0 * pi) / (0.5 * s_1.x * kvv(u_1.x, u_1.y, u_1.z)) > 1.0)
+        //{
+        //    Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
+        //}
+
+        double vphi = V_phi_init * sin(pi / 2.0 - phi);
+
+        double rho_0 = rho_in; // / 5.0;// v_in / Vr;
+
+        s_4 = { rho_0, const_p * rho_0 };
 
         u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
         u_4.y = (Vr * sin(phi) - Vthe * cos(phi));
         u_4.z = vphi;
 
+        //u_4 = { 0.0, 0.0, 0.0 };
+        //s_4 = { 1.0, 1.0};
+
         b_4.z = b_1.z;
-        double Br = 0.0;
-        double Bthe = (b_1.x * y - b_1.y * x) / r;
-        b_4.x = (Br * cos(phi) + Bthe * sin(phi));
-        b_4.y = (Br * sin(phi) - Bthe * cos(phi));
+        double Br = Bo_init * cos(pi / 2.0 - phi);
+        //double Br = 0.0;
+        double Bphi = b_1.x * sin(phi) + b_1.y * cos(phi);   // Мягкий снос
+        //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
+
+        b_4.x = (Br * cos(phi) - Bphi * sin(phi));
+        b_4.y = (Br * sin(phi) + Bphi * cos(phi));
     }
     else
     {
@@ -1953,7 +1985,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     double rho_L, rho_R;
     double p_L, p_R;
     double Vr, Vphi;
-    double u_L, v_L, u_R, v_R;
+    double Br, Bphi;
+    double u_L, v_L, u_R, v_R, bx_L, by_L, bx_R, by_R;
 
     double Vr1, Vr2, Vr4, dr2, dr4;
     dr2 = r2 - r;
@@ -1971,11 +2004,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     x_g = r_g * cos(phi_g);
     y_g = r_g * sin(phi_g);
 
-    rho_L = s_1.x * kv(r / r_g);
-    rho_R = s_2.x * kv(r2 / r_g);
+    rho_L = s_1.x *kv(r / r_g);
+    rho_R = s_2.x *kv(r2 / r_g);
 
-    p_L = s_1.y * kv(r / r_g);
-    p_R = s_2.y * kv(r2 / r_g);
+    p_L = s_1.y *kv(r / r_g);
+    p_R = s_2.y *kv(r2 / r_g);
 
     Vr = u_1.x * cos(phi) + u_1.y * sin(phi);
     Vr1 = Vr;
@@ -1983,15 +2016,25 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     u_L = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_L = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
+    Br = b_1.x * cos(phi) + b_1.y * sin(phi);
+    Bphi = -b_1.x * sin(phi) + b_1.y * cos(phi);
+    bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
     Vr = u_2.x * cos(phi2) + u_2.y * sin(phi2);
     Vr2 = Vr;
     Vphi = -u_2.x * sin(phi2) + u_2.y * cos(phi2);
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
+    Br = b_2.x * cos(phi2) + b_2.y * sin(phi2);
+    Bphi = -b_2.x * sin(phi2) + b_2.y * cos(phi2);
+    bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_R = Br * sin(phi_g) + Bphi * cos(phi_g);
 
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x, b_1.y, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_2.z, b_2.x, b_2.y, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_2.z, bx_R, by_R, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
     
     
     PS.x = PS.x + P[0] * dphi * r_g;
@@ -2002,7 +2045,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * dphi * r_g;
     PB.y = PB.y + P[5] * dphi * r_g;
     PB.z = PB.z + P[6] * dphi * r_g;
-    Pdiv = Pdiv + dphi * r_g * ( n1 * (b_1.x + b_2.x) / 2.0 + n2 * (b_1.y + b_2.y) / 2.0);
+    Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
@@ -2025,10 +2068,20 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     u_L = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_L = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
+    Br = b_1.x * cos(phi) + b_1.y * sin(phi);
+    Bphi = -b_1.x * sin(phi) + b_1.y * cos(phi);
+    bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
     Vr = u_3.x * cos(phi3) + u_3.y * sin(phi3);
     Vphi = -u_3.x * sin(phi3) + u_3.y * cos(phi3);
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
+
+    Br = b_3.x * cos(phi3) + b_3.y * sin(phi3);
+    Bphi = -b_3.x * sin(phi3) + b_3.y * cos(phi3);
+    bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_R = Br * sin(phi_g) + Bphi * cos(phi_g);
 
     if (m == 0)
     {
@@ -2040,8 +2093,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
 
 
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x, b_1.y, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_3.z, b_3.x, b_3.y, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_3.z, bx_R, by_R, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
     
     PS.x = PS.x + P[0] * DR(n);
     PS.y = PS.y + P[7] * DR(n);
@@ -2051,7 +2104,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * DR(n);
     PB.y = PB.y + P[5] * DR(n);
     PB.z = PB.z + P[6] * DR(n);
-    Pdiv = Pdiv - DR(n) * (n1 * (b_1.x + b_3.x) / 2.0 + n2 * (b_1.y + b_3.y) / 2.0);
+    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
     
@@ -2063,11 +2116,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     x_g = r_g * cos(phi_g);
     y_g = r_g * sin(phi_g);
 
-    rho_L = s_1.x * kv(r / r_g);
-    rho_R = s_4.x * kv(r4 / r_g);
+    rho_L = s_1.x *kv(r / r_g);
+    rho_R = s_4.x *kv(r4 / r_g);
 
-    p_L = s_1.y * kv(r / r_g);
-    p_R = s_4.y * kv(r4 / r_g);
+    p_L = s_1.y *kv(r / r_g);
+    p_R = s_4.y *kv(r4 / r_g);
 
     Vr = u_1.x * cos(phi) + u_1.y * sin(phi);
     Vphi = -u_1.x * sin(phi) + u_1.y * cos(phi);
@@ -2092,7 +2145,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * dphi * r_g;
     PB.y = PB.y + P[5] * dphi * r_g;
     PB.z = PB.z + P[6] * dphi * r_g;
-    Pdiv = Pdiv - dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
+    Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
@@ -2115,10 +2168,20 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     u_L = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_L = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
+    Br = b_1.x * cos(phi) + b_1.y * sin(phi);
+    Bphi = -b_1.x * sin(phi) + b_1.y * cos(phi);
+    bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
     Vr = u_5.x * cos(phi5) + u_5.y * sin(phi5);
     Vphi = -u_5.x * sin(phi5) + u_5.y * cos(phi5);
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
+
+    Br = b_5.x * cos(phi5) + b_5.y * sin(phi5);
+    Bphi = -b_5.x * sin(phi5) + b_5.y * cos(phi5);
+    bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+    by_R = Br * sin(phi_g) + Bphi * cos(phi_g);
 
     if (m == M - 1)
     {
@@ -2128,8 +2191,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         p_R = p_L;
     }
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x, b_1.y, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_5.z, b_5.x, b_5.y, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_5.z, bx_R, by_R, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
     
     
     PS.x = PS.x + P[0] * DR(n);
@@ -2140,7 +2203,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * DR(n);
     PB.y = PB.y + P[5] * DR(n);
     PB.z = PB.z + P[6] * DR(n);
-    Pdiv = Pdiv + DR(n) * (n1 * (b_1.x + b_5.x) / 2.0 + n2 * (b_1.y + b_5.y) / 2.0);
+    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
         
     //printf("%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,\n", PS.x, PS.y, PU.x, PU.y, PB.x, PB.y, PB.z, Pdiv);
 
@@ -2171,7 +2234,24 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
             //double dVrdr = DERIVATIVE(Vr4, Vr1, Vr2, dr4, dr2);
             double dVrdr = (Vr2 - Vr1) / dr2;
+
+            //if (isnan(dVrdr) == true || dVrdr == 0.0)
+            //{
+            //    printf("Problems fr = %lf, %lf, %lf, %lf \n", Vr2, Vr1, dr2, pow(dVrdr, alpha_line));
+            //}
+
+            //dVrdr = max(dVrdr, 1.0);
+
+            double sigma = fabs(dVrdr * r / Vr1) - 1.0;  // Vr1
+            double muc = 1.0 - 1.0 / kv(r);
+
+            double ff = 1.0;
             
+            if (fabs(dVrdr) > 0.00001)
+            {
+                ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
+                    ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
+            }
 
             //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
             //double muc = sqrt(1.0 - 1.0 / kv(dist));
@@ -2179,23 +2259,26 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
             //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
 
+            fr += F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
+
 
             //double vth = sqrt(const_p);
-            double vth = sqrt(const_p * sqrt(1.0 / r));
-            double tt = F_line * s_1.x * vth;
-            double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
-            fr += F_continuum * s_1.x * Mt / kv(r);
+            //double vth = sqrt(const_p * sqrt(1.0 / r));
+            //double tt = F_line * s_1.x * vth;
+            //double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
+            //fr += F_continuum * s_1.x * Mt / kv(r);
 
-            //if (r > 3.0 && fr > 1.0)
-            //{
-            //    fr = 1.0;
-            //}
+            if (fr > 100.0)
+            {
+                printf("Problems fr = %lf", fr);
+            }
+
         }
 
-        if (fr < 0.0 && Vr1 <= 0.0)
-        {
-            fr = 0.000001;
-        }
+        //if (fr < 0.0 && Vr1 <= 0.0)
+        //{
+        //    fr = 0.000001;
+        //}
 
         Fx = fr * x / r;
         Fy = fr * y / r;
@@ -2203,10 +2286,10 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
 
     Pdiv = Pdiv + dV * b_1.x / x;
-    //Pdiv = 0.0;
+    // Pdiv = 0.0;
 
 
-    s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
+    s2[index].x =  s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
     //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
     if (s2[index].x <= 0)
     {
@@ -2233,11 +2316,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * Smr + *T_do * Fx) / s2[index].x;
     
     //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.x) + kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
-    u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * (s_1.x * ( kv(u_1.z) - kv(u_1.x)) + (kv(b_1.x) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+    u2[index].x =  (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * (s_1.x * ( kv(u_1.z) - kv(u_1.x)) + (kv(b_1.x) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
 
 
 
-    //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
+        //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
     u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y / cpi4) / x + *T_do * Fy) / s2[index].x;
 
     u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - b_1.x * b_1.z / cpi4) / x) / s2[index].x;
@@ -2253,8 +2336,9 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
 
 
-    s2[index].y = const_p * s2[index].x * sqrt(1.0 / r);
-    //s2[index].y = const_p * s2[index].x;
+    //s2[index].y = const_p * s2[index].x * sqrt(1.0 / r);
+    s2[index].y = const_p * s2[index].x;
+    //s2[index].y = s2[index].x;
 
 
     //s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
@@ -2928,9 +3012,10 @@ int main(void)
     //test_polar_geometry();
     //return 0;
 
-    string name1 = "save_2(512x256).bin";   // Откуда скачиваем
-    string name2 = "save_3(512x256).bin";   // Куда сохраняем
-    int all_step = 20000 * 10;
+    // "save_2(512x256).bin"
+    string name1 = "save_1(256x120).bin";   // Откуда скачиваем
+    string name2 = "save_2(256x120).bin";   // Куда сохраняем
+    int all_step = 20000;
 
 
     double2* host_s;
@@ -3020,7 +3105,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (false)
+    if (true)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3035,28 +3120,34 @@ int main(void)
 
             double dist = sqrt(x * x + y * y);
             double the = polar_angle(y, x);
-            dist = max(dist, 1.0000000001);
-            double vr = v_in + pow((1.0 - 1.0 / dist), 0.8);
-            double vphi = 0.266667 * sin(the);
-            double rho = v_in / vr / kv(dist);
-            double Br = 0.0237411 * 2.0;
+            double vr = 0.0001 + pow((1.0 - 1.0 / dist), 0.8);
+            double vphi = V_phi_init * sin(the);
+            double rho = rho_in / kv(dist);
+            double B0 = Bo_init;
             //if (the > pi / 2.0) Br = -Br;
 
 
-            host_s[k] = { rho, const_p * rho};
+            //host_s[k] = { rho, const_p * rho};
 
             //host_s[k] = {1.0, 0.000223681};
 
             //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
-            host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
+            //host_u[k].z = vphi;
+            //host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
             // 
-            // host_s[k] = { 1.0, 1.0};
+            //host_s[k] = { 1.0, 1.0};
             //host_u[k] = { 0.0, 0.0, 0.0 };
 
-            host_s2[k] = host_s[k];
-            host_u2[k] = host_u[k];
-            //host_b[k] = { Br * x / dist, Br * y / dist, 0.0 };
-            host_b[k] = { 0.0, 0.0, 0.0 };
+            //host_s2[k] = host_s[k];
+            //host_u2[k] = host_u[k];
+
+            double Br = B0 * cos(the) * pow(1.0 / dist, 3.0);
+            double Bphi = -B0/2.0 * sin(the) * pow(1.0 / dist, 3.0);
+
+            double Bx = Br * cos(phi) - Bphi * sin(phi);
+            double By = Br * sin(phi) + Bphi * cos(phi);
+            host_b[k] = {Bx, By, 0.0 };
+            //host_b[k] = { 0.0, 0.0, 0.0 };
             host_b2[k] = host_b[k];
         }
     }
@@ -3136,7 +3227,7 @@ int main(void)
     cout << "START" << endl;
 
 
-    int meth = 2;  // Laks метода нет! Нужно сделать
+    int meth = 0; // 2;  // Laks метода нет! Нужно сделать
 
     // NO TVD
     for (int i = 0; i < all_step; i = i + 2)  // Сколько шагов по времени делаем?
@@ -3372,11 +3463,14 @@ int main(void)
         {
             Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
             Temp = host_s[k].y / host_s[k].x;
-            Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+            if (sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z)) > 0.00001)
+            {
+                Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                    sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+            }
         }
 
-        Max_alf = 0.0;
+        //Max_alf = 0.0;
 
         double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
         double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
@@ -3420,7 +3514,24 @@ int main(void)
         }
     }
 
-    cout << "Mass rashod = " << 315.36 * 5.48177 * Mas << " x 10^-6 MasSolar / year" << endl;
+    cout << "Mass rashod N = " << 375.151 * Mas << " x 10^-8 MasSolar / year" << endl;
+
+    Mas = 0.0;
+    for (int i = N / 2; i <= N / 2; i++)
+    {
+        double r = R_CENTER(i);
+        for (int j = 0; j < M - 1; j++)
+        {
+            double phi = PHI_CENTER(j);
+            double x = r * cos(phi);
+            int index = j * N + i;
+
+            double Vr = host_u[index].x * cos(phi) + host_u[index].y * sin(phi);
+            Mas += (2.0 * pi * x * r * dphi) * Vr * host_s[index].x;
+        }
+    }
+
+    cout << "Mass rashod N/2 = " << 375.151 * Mas << " x 10^-8 MasSolar / year" << endl;
 
 
     // Печатаем 1д файл
@@ -3447,11 +3558,14 @@ int main(void)
             {
                 Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
                 Temp = host_s[k].y / host_s[k].x;
-                Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                    sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+                if (sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z)) > 0.00001)
+                {
+                    Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                        sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+                }
             }
 
-            Max_alf = 0.0;
+            //Max_alf = 0.0;
 
             double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
             double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);

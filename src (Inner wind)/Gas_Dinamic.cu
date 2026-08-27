@@ -1063,6 +1063,23 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double SL = min(u1, u2) - max(cfL, cfR);
     double SR = max(u1, u2) + max(cfL, cfR);
 
+    if (metod == 0)   // LAKS
+    {
+        double ap = (p_L + p_R) / 2.0;
+        double ro = (ro_L + ro_R) / 2.0;
+        double aC = (bn1 / sqrt(ro_L) + bn2 / sqrt(ro_R)) / 2.0;
+        double b2o = (aR + aL) / 2.0; // aL = b21, aR = b22
+        double cC = sqrt(ggg * ap / ro);
+        double qp = sqrt(b2o + cC * (cC + 2.0 * aC));
+        double qm = sqrt(b2o + cC * (cC - 2.0 * aC));
+        double cfC = (qp + qm) / 2.0;
+
+        double TR0 = fabs(u1 + u2) / 2.0 + cfC;
+        double TL0 = -TR0;
+        SR = TR0;
+        SL = TL0;
+    }
+
     double pTL = p_L + bb_L / 2.0;
     double pTR = p_R + bb_R / 2.0;
 
@@ -1137,7 +1154,7 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double Q_LL = Q_L * (SL - u1) / (SL - SM);
     double Q_RR = Q_R * (SR - u2) / (SR - SM);
 
-    if (metod == 1)   // HLL
+    if (metod <= 1)   // HLL
     {
         double dq[9];
         for (int ik = 0; ik < 9; ik++)
@@ -1162,7 +1179,7 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
         double  PO[9];
         for (int i = 0; i < 9; i++)
         {
-            PO[i] = TR * FL[i] - TL * FR[i] + a * dq[i];
+            PO[i] = (TR * FL[i] - TL * FR[i] + a * dq[i]) / b;
         }
 
         double SN = max(fabs(SL), fabs(SR));
