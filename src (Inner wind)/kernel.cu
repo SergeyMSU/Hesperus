@@ -79,9 +79,13 @@
 #define alpha_line (0.65) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 #define Bo_init 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 0.582751  // смена гран условий по углу
+#define phi_init 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0) // (0.266667)
+
+
+#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
 #define DERIVATIVE(f_left, f_center, f_right, hL, hR) \
@@ -1946,8 +1950,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         //s_4 = { 1.0, 1.0};
 
         b_4.z = b_1.z;
-        double Br = Bo_init * cos(pi / 2.0 - phi);
-        //double Br = 0.0;
+
+        //double Br1 = b_1.x * sin(phi) + b_1.y * cos(phi);
+        //double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 3.0)) - Bo_init * cos(pi / 2.0 - phi);
+        //double Br = Br1 + Bo_init * cos(pi / 2.0 - phi) * (-1.0 + kv(1.0/r));
+        double Br = 0.0;
 
 
         double Bphi1 = b_1.x * sin(phi) + b_1.y * cos(phi);  
@@ -1959,10 +1966,13 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         b_4.x = (Br * cos(phi) - Bphi * sin(phi));
         b_4.y = (Br * sin(phi) + Bphi * cos(phi));
 
+        double Br_dipole = Bo_init * cos(pi / 2.0 - phi);
+        double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
 
-        if (fabs(phi) > phi_init)
+
+        if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.000001)
         {
-            Vthe = Vr * Bphi / Br;
+            Vthe = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
         }
 
         u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
@@ -2015,6 +2025,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     double Vr, Vphi;
     double Br, Bphi;
     double u_L, v_L, u_R, v_R, bx_L, by_L, bx_R, by_R;
+    double Bx_dipole_, By_dipole_;
 
     double Vr1, Vr2, Vr4, dr2, dr4;
     dr2 = r2 - r;
@@ -2060,9 +2071,12 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
     by_R = Br * sin(phi_g) + Bphi * cos(phi_g);
 
+    Bx_dipole_ = Bx_dipole(r_g, phi_g);
+    By_dipole_ = By_dipole(r_g, phi_g);
 
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_2.z, bx_R, by_R, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_2.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
     
     if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
     {
@@ -2077,7 +2091,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * dphi * r_g;
     PB.y = PB.y + P[5] * dphi * r_g;
     PB.z = PB.z + P[6] * dphi * r_g;
-    Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    //Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
@@ -2123,10 +2138,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         p_R = p_L;
     }
 
+    Bx_dipole_ = Bx_dipole(r_g, phi_g);
+    By_dipole_ = By_dipole(r_g, phi_g);
 
-
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_3.z, bx_R, by_R, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_3.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
     
     PS.x = PS.x + P[0] * DR(n);
     PS.y = PS.y + P[7] * DR(n);
@@ -2136,7 +2152,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * DR(n);
     PB.y = PB.y + P[5] * DR(n);
     PB.z = PB.z + P[6] * DR(n);
-    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    //Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
     
@@ -2165,8 +2182,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     u_R = Vr * cos(phi_g) - Vphi * sin(phi_g);
     v_R = Vr * sin(phi_g) + Vphi * cos(phi_g);
 
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x, b_1.y, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_4.z, b_4.x, b_4.y, b_4.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+    Bx_dipole_ = Bx_dipole(r_g, phi_g);
+    By_dipole_ = By_dipole(r_g, phi_g);
+
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, b_1.x + Bx_dipole_, b_1.y + By_dipole_, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_4.z, b_4.x + Bx_dipole_, b_4.y + By_dipole_, b_4.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
     
     
     PS.x = PS.x + P[0] * dphi * r_g;
@@ -2177,7 +2197,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * dphi * r_g;
     PB.y = PB.y + P[5] * dphi * r_g;
     PB.z = PB.z + P[6] * dphi * r_g;
-    Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
+    //Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
+    Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x + 2.0 * Bx_dipole_) / 2.0 + n2 * (b_1.y + b_4.y + 2.0 * By_dipole_) / 2.0);
 
     P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
@@ -2222,9 +2243,12 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         rho_R = rho_L;
         p_R = p_L;
     }
+
+    Bx_dipole_ = Bx_dipole(r_g, phi_g);
+    By_dipole_ = By_dipole(r_g, phi_g);
     
-    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
-        u_R, v_R, u_5.z, bx_R, by_R, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+    tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+        u_R, v_R, u_5.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
     
     
     PS.x = PS.x + P[0] * DR(n);
@@ -2235,7 +2259,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     PB.x = PB.x + P[4] * DR(n);
     PB.y = PB.y + P[5] * DR(n);
     PB.z = PB.z + P[6] * DR(n);
-    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    //Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+    Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
         
     //printf("%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,\n", PS.x, PS.y, PU.x, PU.y, PB.x, PB.y, PB.z, Pdiv);
 
@@ -2315,10 +2340,10 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
             //double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
             //fr += F_continuum * s_1.x * Mt / kv(r);
 
-            if (fr > 100.0)
-            {
-                printf("Problems fr = %lf", fr);
-            }
+            //if (fr > 100.0)
+            //{
+            //    printf("Problems fr = %lf", fr);
+            //}
 
         }
 
@@ -2332,8 +2357,12 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     }
 
 
-    Pdiv = Pdiv + dV * b_1.x / x;
-    // Pdiv = 0.0;
+    double bx = b_1.x + Bx_dipole(r, phi);
+    double by = b_1.y + By_dipole(r, phi);
+
+    //Pdiv = Pdiv + dV * b_1.x / x;
+    Pdiv = Pdiv + dV * bx / x;
+    //Pdiv = 0.0;
 
 
     s2[index].x =  s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
@@ -2363,19 +2392,21 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * Smr + *T_do * Fx) / s2[index].x;
     
     //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.x) + kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
-    u2[index].x =  (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * (s_1.x * ( kv(u_1.z) - kv(u_1.x)) + (kv(b_1.x) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+    
+    
+    
+    u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (bx / cpi4) * Pdiv) / dV + *T_do * (s_1.x * (kv(u_1.z) - kv(u_1.x)) + (kv(bx) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+    u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (by / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - bx * by / cpi4) / x + *T_do * Fy) / s2[index].x;
+    u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - bx * b_1.z / cpi4) / x) / s2[index].x;
+    
 
 
-
-        //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
-    u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y / cpi4) / x + *T_do * Fy) / s2[index].x;
-
-    u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - b_1.x * b_1.z / cpi4) / x) / s2[index].x;
-
+    //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
     //b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV - *T_do*(u_1.y * b_1.x - b_1.y * u_1.x)/y);
-    b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
     //b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
-    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * b_1.y - b_1.x * u_1.y) / x);
+    
+    b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
+    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * by - bx * u_1.y) / x);
     b2[index].z = b_1.z - *T_do * (PB.z + u_1.z * Pdiv) / dV;
 
     //s2[index].y = (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) - *T_do * (PS.y + (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv)//
@@ -3060,9 +3091,9 @@ int main(void)
     //return 0;
 
     // "save_2(512x256).bin"
-    string name1 = "save_1(256x120).bin";   // Откуда скачиваем
-    string name2 = "save_2(256x120).bin";   // Куда сохраняем
-    int all_step = 60000;  // 202
+    string name1 = "save_3(256x120).bin";   // Откуда скачиваем
+    string name2 = "save_3(256x120).bin";   // Куда сохраняем
+    int all_step = 20000 * 6;  // 294
 
 
     double2* host_s;
@@ -3152,7 +3183,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3506,16 +3537,19 @@ int main(void)
         x = r * cos(phi);
         y = r * sin(phi);
 
+        double bx = host_b[k].x + Bx_dipole(r, phi);
+        double by = host_b[k].y + By_dipole(r, phi);
+
 
         double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
         if (host_s[k].x > 0.0)
         {
             Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
             Temp = host_s[k].y / host_s[k].x;
-            if (sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z)) > 0.00001)
+            if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
             {
                 Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                    sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+                    sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
             }
         }
 
@@ -3523,12 +3557,12 @@ int main(void)
 
         double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
         double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
-        double Br = (host_b[k].x * x + host_b[k].y * y) / sqrt(x * x + y * y);
-        double Bthe = (host_b[k].x * y - host_b[k].y * x) / sqrt(x * x + y * y);
+        double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+        double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
         fout5 << x << " " << y << " " << host_s[k].x << " " << host_s[k].y <<//
             " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
-            " " << host_b[k].x << " " << host_b[k].y << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+            " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
             Max << " " << Max_alf << " " << Temp << endl;
     }
 
@@ -3601,16 +3635,19 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
+            double bx = host_b[k].x + Bx_dipole(r, phi);
+            double by = host_b[k].y + By_dipole(r, phi);
+
 
             double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
             if (host_s[k].x > 0.0)
             {
                 Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
                 Temp = host_s[k].y / host_s[k].x;
-                if (sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z)) > 0.00001)
+                if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
                 {
                     Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                        sqrt((host_b[k].x * host_b[k].x + host_b[k].y * host_b[k].y + host_b[k].z * host_b[k].z));
+                        sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
                 }
             }
 
@@ -3618,12 +3655,12 @@ int main(void)
 
             double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
             double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
-            double Br = (host_b[k].x * x + host_b[k].y * y) / sqrt(x * x + y * y);
-            double Bthe = (host_b[k].x * y - host_b[k].y * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
             fout1dr << r << " " << host_s[k].x << " " << host_s[k].y <<//
                 " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
-                " " << host_b[k].x << " " << host_b[k].y << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
                 Max << " " << Max_alf << " " << Temp << endl;
         }
 
