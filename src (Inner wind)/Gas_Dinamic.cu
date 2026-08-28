@@ -1049,7 +1049,7 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
     double bb_R = kv(bx_R) + kv(by_R) + kv(bz_R);
 
     double aL = (kv(bx_L) + kv(by_L) + kv(bz_L)) / ro_L;
-    double aR = (kv(bx_L) + kv(by_L) + kv(bz_L)) / ro_L;
+    double aR = (kv(bx_R) + kv(by_R) + kv(bz_R)) / ro_R;
 
     double uu_L = (kv(v1_L) + kv(v2_L) + kv(v3_L)) / 2.0;
     double uu_R = (kv(v1_R) + kv(v2_R) + kv(v3_R)) / 2.0;
@@ -1070,14 +1070,22 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
         double aC = (bn1 / sqrt(ro_L) + bn2 / sqrt(ro_R)) / 2.0;
         double b2o = (aR + aL) / 2.0; // aL = b21, aR = b22
         double cC = sqrt(ggg * ap / ro);
-        double qp = sqrt(b2o + cC * (cC + 2.0 * aC));
-        double qm = sqrt(b2o + cC * (cC - 2.0 * aC));
-        double cfC = (qp + qm) / 2.0;
+
+        // Правильное вычисление быстрой скорости
+        double temp = b2o + cC * cC;
+        double discr = temp * temp - 4.0 * aC * aC * cC * cC;
+        if (discr < 0.0) discr = 0.0;   // защита от ошибок округления
+        double cfC = sqrt(0.5 * (temp + sqrt(discr)));
 
         double TR0 = fabs(u1 + u2) / 2.0 + cfC;
         double TL0 = -TR0;
         SR = TR0;
         SL = TL0;
+
+        if (isnan(SL) == true || isnan(SR) == true)
+        {
+            printf("Problems SL SR = %lf, %lf, %lf, %lf, %lf \n", SL, SR, aC, cC, cfC);
+        }
     }
 
     double pTL = p_L + bb_L / 2.0;

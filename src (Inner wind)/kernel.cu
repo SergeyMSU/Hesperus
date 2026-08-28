@@ -78,7 +78,9 @@
 
 #define alpha_line (0.65) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.00153551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 0.582751  // смена гран условий по углу
+
 #define V_phi_init (0.0) // (0.266667)
 
 
@@ -1807,6 +1809,20 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     return;
 }
 
+__device__ double atomicMinDouble(double* address, double val) 
+{
+    unsigned long long* addr_as_ull = reinterpret_cast<unsigned long long*>(address);
+    unsigned long long old = *addr_as_ull;
+    unsigned long long assumed;
+    do {
+        assumed = old;
+        double old_val = __longlong_as_double(assumed);
+        double new_val = (val < old_val) ? val : old_val;
+        unsigned long long new_val_ull = __double_as_longlong(new_val);
+        old = atomicCAS(addr_as_ull, assumed, new_val_ull);
+    } while (assumed != old);
+    return __longlong_as_double(old);
+}
 
 __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u2, double3* b2, double* T, double* T_do, int i, int method)
 {
@@ -1911,6 +1927,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         if (Vr <= 0.0) Vr = 0.0;
 
         double Vthe = 0.0;
+
         //Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
 
         // Если поле сильное, нужно сносить Vthe
@@ -1925,21 +1942,32 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
         s_4 = { rho_0, const_p * rho_0 };
 
-        u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
-        u_4.y = (Vr * sin(phi) - Vthe * cos(phi));
-        u_4.z = vphi;
-
         //u_4 = { 0.0, 0.0, 0.0 };
         //s_4 = { 1.0, 1.0};
 
         b_4.z = b_1.z;
         double Br = Bo_init * cos(pi / 2.0 - phi);
         //double Br = 0.0;
-        double Bphi = b_1.x * sin(phi) + b_1.y * cos(phi);   // Мягкий снос
+
+
+        double Bphi1 = b_1.x * sin(phi) + b_1.y * cos(phi);  
+        double Bphi2 = b_2.x * sin(phi) + b_2.y * cos(phi); 
+        double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r4 - r);
+
         //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
 
         b_4.x = (Br * cos(phi) - Bphi * sin(phi));
         b_4.y = (Br * sin(phi) + Bphi * cos(phi));
+
+
+        if (fabs(phi) > phi_init)
+        {
+            Vthe = Vr * Bphi / Br;
+        }
+
+        u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
+        u_4.y = (Vr * sin(phi) - Vthe * cos(phi));
+        u_4.z = vphi;
     }
     else
     {
@@ -2036,6 +2064,10 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L, by_L, b_1.z, rho_R, Q, p_R, //
         u_R, v_R, u_2.z, bx_R, by_R, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
     
+    if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
+    {
+        printf("Problems P[4] = %lf, %lf, %lf, %lf, %lf \n", P[4], P[5], P[6], P[0], P[7]);
+    }
     
     PS.x = PS.x + P[0] * dphi * r_g;
     PS.y = PS.y + P[7] * dphi * r_g;
@@ -2207,9 +2239,14 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         
     //printf("%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,\n", PS.x, PS.y, PU.x, PU.y, PB.x, PB.y, PB.z, Pdiv);
 
+    //if (*T > tmin)
+    //{
+    //    *T = tmin;
+    //}
+
     if (*T > tmin)
     {
-        *T = tmin;
+        atomicMinDouble(T, tmin);
     }
 
     double dV = CELL_AREA(n);
@@ -2251,6 +2288,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
             {
                 ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
                     ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
+
+                if (isnan(ff) == true)
+                {
+                    printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
+                }
             }
 
             //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
@@ -2260,6 +2302,11 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
             //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
 
             fr += F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
+
+            if (isnan(fr) == true)
+            {
+                printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
+            }
 
 
             //double vth = sqrt(const_p);
@@ -3015,7 +3062,7 @@ int main(void)
     // "save_2(512x256).bin"
     string name1 = "save_1(256x120).bin";   // Откуда скачиваем
     string name2 = "save_2(256x120).bin";   // Куда сохраняем
-    int all_step = 20000;
+    int all_step = 60000;  // 202
 
 
     double2* host_s;
@@ -3227,7 +3274,7 @@ int main(void)
     cout << "START" << endl;
 
 
-    int meth = 0; // 2;  // Laks метода нет! Нужно сделать
+    int meth = 1; // 2;  // Laks метода нет! Нужно сделать
 
     // NO TVD
     for (int i = 0; i < all_step; i = i + 2)  // Сколько шагов по времени делаем?
@@ -3240,6 +3287,7 @@ int main(void)
         {
             meth = 3;
         }*/
+
         add2 << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s, u, b, s2, u2, b2, T, T_do, i, meth);
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> >  (s, u, b, s2, u2, b2, T, T_do, i, meth)
         cudaStatus = cudaGetLastError();
@@ -3264,6 +3312,7 @@ int main(void)
             fprintf(stderr, "2  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
             exit(-1);
         }
+
 
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth)
         add2 << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth);
