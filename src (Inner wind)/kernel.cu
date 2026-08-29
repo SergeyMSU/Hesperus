@@ -78,10 +78,10 @@
 
 #define alpha_line (0.65) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.153551// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 1.06324 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define Bo_init 1.53551// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 0.582751 // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.0) // (0.266667)
+#define V_phi_init (0.112766) // (0.266667)
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -1806,7 +1806,7 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     *TT = *TT + *T_do;
     *T = 10000000;
     *i = *i + 1;
-    if (*i % 10000 == 0)
+    if (*i % 1000 == 0)
     {
         printf("i = %d,  TT all = %lf, hours = %lf; dT hours = %E \n", *i, *TT, *TT * 1.09556, *T_do * 1.09556);
     }
@@ -2508,11 +2508,11 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         b_2 = b_1;
 
         // Fildmeier
-        double Vphi = u_1.x * sin(phi) + u_1.y * cos(phi);
-        double Vr = 1.0;
+        //double Vphi = u_1.x * sin(phi) + u_1.y * cos(phi);
+        //double Vr = 1.0;
 
-        u_2.x = (Vr * cos(phi) - Vthe * sin(phi));
-        u_2.y = (Vr * sin(phi) + Vthe * cos(phi));
+        //u_2.x = (Vr * cos(phi) - Vphi * sin(phi));
+        //u_2.y = (Vr * sin(phi) + Vphi * cos(phi));
     }
     else
     {
@@ -2550,11 +2550,12 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         double Vr1 = (u_1.x * x + u_1.y * y) / r;
         double Vr2 = u_2.x * cos(phi2) + u_2.y * sin(phi2);
         Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
-        //if (Vr < 0.00001) Vr = 0.00001;
 
+
+        if (Vr < 0.000001) Vr = Vr1;
         if (Vr <= 0.0) Vr = 0.0;
 
-        double Vthe = 0.0;
+        double Vphi = 0.0;
 
         //Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
 
@@ -2564,7 +2565,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         //    Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
         //}
 
-        double vphi = V_phi_init * sin(pi / 2.0 - phi);
+        double vphi_ = V_phi_init * sin(pi / 2.0 - phi);
 
         double rho_0 = rho_in; // / 5.0;// v_in / Vr;
 
@@ -2575,14 +2576,14 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
         b_4.z = b_1.z;
 
-        double Br1 = b_1.x * sin(phi) + b_1.y * cos(phi);
+        double Br1 = b_1.x * cos(phi) + b_1.y * sin(phi);
         double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
         //double Br = Br1 + Bo_init * cos(pi / 2.0 - phi) * (-1.0 + kv(1.0/r));
         //double Br = 0.0;
 
 
-        double Bphi1 = b_1.x * sin(phi) + b_1.y * cos(phi);
-        double Bphi2 = b_2.x * sin(phi) + b_2.y * cos(phi);
+        double Bphi1 = -b_1.x * sin(phi) + b_1.y * cos(phi);
+        double Bphi2 = -b_2.x * sin(phi) + b_2.y * cos(phi);
         double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r4 - r);
         //Bphi = 0.0;
 
@@ -2597,12 +2598,12 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
         if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
         {
-            Vthe = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+            Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
         }
 
-        u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
-        u_4.y = (Vr * sin(phi) - Vthe * cos(phi));
-        u_4.z = vphi;
+        u_4.x = (Vr * cos(phi) - Vphi * sin(phi));
+        u_4.y = (Vr * sin(phi) + Vphi * cos(phi));
+        u_4.z = vphi_;
     }
     else
     {
@@ -2679,8 +2680,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
     // Также предлагаю снести на грань с двух сторон все значения в полярной системе координат
     if (true)
     {
-        double Vr_L, Vphi_L, Vr_R, Vphi_R;
-        double Br_L, Bphi_L, Br_R, Bphi_R;
+        double Vr_L, Vphi_L, Vr_R, Vphi_R, w_L, w_R;
+        double Br_L, Bphi_L, Br_R, Bphi_R, bz_L, bz_R;
         double Vr3, Vr5, Vr31, Vr51, Vr21, Vr41;
         double Br1, Br2, Br4, Br3, Br5, Br31, Br51, Br21, Br41;
         double Vphi1, Vphi2, Vphi4, Vphi3, Vphi5, Vphi31, Vphi51, Vphi21, Vphi41;
@@ -2726,6 +2727,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             if (rho_L <= 0.0) rho_L = s_1.x;
             p_L = const_p * rho_L;
 
+            w_L = linear(r4, u_4.z, r, u_1.z, r2, u_2.z, r_g);
+            bz_L = linear(r4, b_4.z, r, b_1.z, r2, b_2.z, r_g);
+
             Vr_L = linear(r4, Vr4, r, Vr1, r2, Vr2, r_g);
             Vphi_L = linear(r4, Vphi4, r, Vphi1, r2, Vphi2, r_g);
             u_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
@@ -2750,6 +2754,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Bphi21 = -b_21.x * sin(phi21) + b_21.y * cos(phi21);
                 Br_R = linear(r, Br1, r2, Br2, r21, Br21, r_g);
                 Bphi_R = linear(r, Bphi1, r2, Bphi2, r21, Bphi21, r_g);
+
+                w_R = linear(r, u_1.z, r2, u_2.z, r21, u_21.z, r_g);
+                bz_R = linear(r, b_1.z, r2, b_2.z, r21, b_21.z, r_g);
             }
             else
             {
@@ -2758,6 +2765,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Vphi_R = Vphi2;
                 Br_R = Br2;
                 Bphi_R = Bphi2;
+                w_R = u_2.z;
+                bz_R = b_2.z;
             }
 
             p_R = const_p * rho_R;
@@ -2771,8 +2780,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             By_dipole_ = By_dipole(r_g, phi_g);
 
 
-            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
-                u_R, v_R, u_2.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
 
             if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
             {
@@ -2818,6 +2827,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
             by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
+            w_L = linear(phi5, u_5.z, phi, u_1.z, phi3, u_3.z, phi_g);
+            bz_L = linear(phi5, b_5.z, phi, b_1.z, phi3, b_3.z, phi_g);
+
             if (m >= 2)
             {
                 rho_R = linear(phi, s_1.x, phi3, s_3.x, phi31, s_31.x, phi_g);
@@ -2832,6 +2844,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Bphi31 = -b_31.x * sin(phi31) + b_31.y * cos(phi31);
                 Br_R = linear(phi, Br1, phi3, Br3, phi31, Br31, phi_g);
                 Bphi_R = linear(phi, Bphi1, phi3, Bphi3, phi31, Bphi31, phi_g);
+
+                w_R = linear(phi, u_1.z, phi3, u_3.z, phi31, u_31.z, phi_g);
+                bz_R = linear(phi, b_1.z, phi3, b_3.z, phi31, b_31.z, phi_g);
             }
             else
             {
@@ -2840,6 +2855,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Vphi_R = Vphi3;
                 Br_R = Br3;
                 Bphi_R = Bphi3;
+                w_R = u_3.z;
+                bz_R = b_3.z;
             }
 
             p_R = const_p * rho_R;
@@ -2853,17 +2870,19 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             {
                 u_R = -u_L;
                 v_R = v_L;
+                w_R = -w_L;
                 rho_R = rho_L;
                 p_R = p_L;
                 bx_R = -bx_L;
                 by_R = by_L;
+                bz_R = -bz_L;
             }
 
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
-                u_R, v_R, u_3.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
 
             PS.x = PS.x + P[0] * DR(n);
             PS.y = PS.y + P[7] * DR(n);
@@ -2903,6 +2922,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
             by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
+            w_L = linear(r2, u_2.z, r, u_1.z, r4, u_4.z, r_g);
+            bz_L = linear(r2, b_2.z, r, b_1.z, r4, b_4.z, r_g);
+
             if (n >= 2)
             {
                 rho_R = linear(r, s_1.x * kv(r), r4, s_4.x * kv(r4), r41, s_41.x * kv(r41), r_g) / kv(r_g);
@@ -2917,6 +2939,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Bphi41 = -b_41.x * sin(phi41) + b_41.y * cos(phi41);
                 Br_R = linear(r, Br1, r4, Br4, r41, Br41, r_g);
                 Bphi_R = linear(r, Bphi1, r4, Bphi4, r41, Bphi41, r_g);
+
+                w_R = linear(r, u_1.z, r4, u_4.z, r41, u_41.z, r_g);
+                bz_R = linear(r, b_1.z, r4, b_4.z, r41, b_41.z, r_g);
             }
             else
             {
@@ -2925,6 +2950,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Vphi_R = Vphi4;
                 Br_R = Br4;
                 Bphi_R = Bphi4;
+                w_R = u_4.z;
+                bz_R = b_4.z;
             }
 
             p_R = const_p * rho_R;
@@ -2933,11 +2960,23 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
             by_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
 
+            if (n == 0)
+            {
+                u_L = u_R;
+                v_L = v_R;
+                w_L = w_R;
+                rho_L = rho_R;
+                p_L = p_R;
+                bx_L = bx_R;
+                by_L = by_R;
+                bz_L = bz_R;
+            }
+
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
-                u_R, v_R, u_4.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_4.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
 
 
             PS.x = PS.x + P[0] * dphi * r_g;
@@ -2979,6 +3018,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
             by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
+            w_L = linear(phi3, u_3.z, phi, u_1.z, phi5, u_5.z, phi_g);
+            bz_L = linear(phi3, b_3.z, phi, b_1.z, phi5, b_5.z, phi_g);
+
             if (m <= M - 3)
             {
                 rho_R = linear(phi, s_1.x, phi5, s_5.x, phi51, s_51.x, phi_g);
@@ -2993,6 +3035,9 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Bphi51 = -b_51.x * sin(phi51) + b_51.y * cos(phi51);
                 Br_R = linear(phi, Br1, phi5, Br5, phi51, Br51, phi_g);
                 Bphi_R = linear(phi, Bphi1, phi5, Bphi5, phi51, Bphi51, phi_g);
+
+                w_R = linear(phi, u_1.z, phi5, u_5.z, phi51, u_51.z, phi_g);
+                bz_R = linear(phi, b_1.z, phi5, b_5.z, phi51, b_51.z, phi_g);
             }
             else
             {
@@ -3001,6 +3046,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 Vphi_R = Vphi5;
                 Br_R = Br5;
                 Bphi_R = Bphi5;
+                w_R = u_5.z;
+                bz_R = b_5.z;
             }
 
             p_R = const_p * rho_R;
@@ -3013,17 +3060,19 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             {
                 u_R = -u_L;
                 v_R = v_L;
+                w_R = -w_L;
                 rho_R = rho_L;
                 p_R = p_L;
                 bx_R = -bx_L;
                 by_R = by_L;
+                bz_R = -bz_L;
             }
 
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
-                u_R, v_R, u_5.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
 
 
             PS.x = PS.x + P[0] * DR(n);
@@ -3098,13 +3147,22 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
             //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
 
-            fr += F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
+            double fline = F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
+            fr += fline;
 
             if (isnan(fr) == true)
             {
                 printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
             }
 
+
+            //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
+            tmin = 0.1 * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0001));
+
+            if (*T > tmin)
+            {
+                atomicMinDouble(T, tmin);
+            }
 
             //double vth = sqrt(const_p);
             //double vth = sqrt(const_p * sqrt(1.0 / r));
@@ -3864,9 +3922,9 @@ int main(void)
     //return 0;
 
     // "save_2(512x256).bin"
-    string name1 = "save_1(256x120).bin";   // Откуда скачиваем
+    string name1 = "save_2(256x120).bin";   // Откуда скачиваем
     string name2 = "save_2(256x120).bin";   // Куда сохраняем
-    int all_step = 5000 * 1;  // 294
+    int all_step = 20000 * 3;  // 294
 
 
     double2* host_s;
