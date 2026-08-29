@@ -78,8 +78,8 @@
 
 #define alpha_line (0.65) //(0.752342) //(0.5)      //  оэффициент внутри line-driven силы
 
-#define Bo_init 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 0.797285  // смена гран условий по углу
+#define Bo_init 0.153551// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 1.06324 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0) // (0.266667)
 
@@ -2423,6 +2423,779 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     //s2[index].y = s2[index].x;
 }
 
+__global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double3* u2, double3* b2, double* T, double* T_do, int i, int method)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;   // √лобальный индекс текущей €чейки (текущего потока)
+    int n = index % N;                                   // номер €чейки по x (от 0)
+    int m = (index - n) / N;                             // номер €чейки по y (от 0)
+
+    double r = R_CENTER(n);
+    double phi = PHI_CENTER(m);
+
+    double y = r * sin(phi);
+    double x = r * cos(phi);
+
+
+    double2 s_1, s_2, s_3, s_4, s_5;      // ѕеременные всех соседей и самой €чейки
+    double3 u_1, u_2, u_3, u_4, u_5;      
+    double3 b_1, b_2, b_3, b_4, b_5;
+    double2 s_21, s_31, s_41, s_51;      
+    double3 u_21, u_31, u_41, u_51;      
+    double3 b_21, b_31, b_41, b_51;
+    double2 Ps12 = { 0,0 }, Pu12 = { 0,0 }, Ps13 = { 0,0 }, Pu13 = { 0,0 }, //
+        Ps14 = { 0,0 }, Pu14 = { 0,0 }, Ps15 = { 0,0 }, Pu15 = { 0,0 }; // ¬ектора потоков
+    double3 Pb12 = { 0.0, 0.0, 0.0 }, Pb13 = { 0.0, 0.0, 0.0 }, Pb14 = { 0.0, 0.0, 0.0 }, Pb15 = { 0.0, 0.0, 0.0 };
+    double tmin = 1000;
+    double P[8];
+    P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+    if (index < 0 || index > N * M - 1)
+    {
+        printf("Error index = %d \n", index);
+    }
+
+    s_1 = s[index];
+    u_1 = u[index];
+    b_1 = b[index];
+
+    double r2, r3, r4, r5, phi2, phi3, phi4, phi5;
+    double r21, r31, r41, r51, phi21, phi31, phi41, phi51;
+
+
+    // ЅерЄм параметры соседей и задаЄм граничные услови€
+    if ((m == M - 1))
+    {
+        r5 = r;
+        phi5 = pi / 2.0;
+        // Ћева€ граница (сверху над сферой)
+
+        // симметри€
+        s_5 = s_1;
+        u_5 = u_1;
+        b_5 = b_1;
+        u_5.x = 0.0;
+        u_5.z = 0.0;
+        b_5.x = 0.0;
+        b_5.z = 0.0;
+    }
+    else
+    {
+        s_5 = s[(m + 1) * N + n];
+        u_5 = u[(m + 1) * N + n];
+        b_5 = b[(m + 1) * N + n];
+        r5 = r;
+        phi5 = PHI_CENTER(m + 1);
+    }
+
+    if ((m <= M - 3))
+    {
+        s_51 = s[(m + 2) * N + n];
+        u_51 = u[(m + 2) * N + n];
+        b_51 = b[(m + 2) * N + n];
+        r51 = r;
+        phi51 = PHI_CENTER(m + 2);
+    }
+
+    if ((n == N - 1))
+    {
+        r2 = Rb;
+        phi2 = phi;
+        // крайн€€ €чейка справа области
+
+        // м€гкие услови€
+        s_2 = s_1;
+        u_2 = u_1;
+        b_2 = b_1;
+
+        // Fildmeier
+        double Vphi = u_1.x * sin(phi) + u_1.y * cos(phi);
+        double Vr = 1.0;
+
+        u_2.x = (Vr * cos(phi) - Vthe * sin(phi));
+        u_2.y = (Vr * sin(phi) + Vthe * cos(phi));
+    }
+    else
+    {
+        s_2 = s[(m)*N + n + 1];
+        u_2 = u[(m)*N + n + 1];
+        b_2 = b[(m)*N + n + 1];
+        r2 = R_CENTER(n + 1);
+        phi2 = phi;
+    }
+
+    if ((n <= N - 3))
+    {
+        s_21 = s[(m)*N + n + 2];
+        u_21 = u[(m)*N + n + 2];
+        b_21 = b[(m)*N + n + 2];
+        r21 = R_CENTER(n + 2);
+        phi21 = phi;
+    }
+
+    if (n == 0)
+    {
+        r4 = 1.0;
+        phi4 = phi;
+
+        double x4, y4;
+        x4 = 1.0 * cos(phi);
+        y4 = 1.0 * sin(phi);
+        // крайн€€ €чейка слева области
+
+        double Vr;
+        // double Vr = (u_1.x * x + u_1.y * y) / r;   // ѕопробуем снести скорость м€гко (можно потом попробовать вторым пор€дком даже)
+        // 
+        // 
+        // линейный снос Vr
+        double Vr1 = (u_1.x * x + u_1.y * y) / r;
+        double Vr2 = u_2.x * cos(phi2) + u_2.y * sin(phi2);
+        Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
+        //if (Vr < 0.00001) Vr = 0.00001;
+
+        if (Vr <= 0.0) Vr = 0.0;
+
+        double Vthe = 0.0;
+
+        //Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
+
+        // ≈сли поле сильное, нужно сносить Vthe
+        //if (kvv(b_1.x, b_1.y, b_1.z) / (8.0 * pi) / (0.5 * s_1.x * kvv(u_1.x, u_1.y, u_1.z)) > 1.0)
+        //{
+        //    Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
+        //}
+
+        double vphi = V_phi_init * sin(pi / 2.0 - phi);
+
+        double rho_0 = rho_in; // / 5.0;// v_in / Vr;
+
+        s_4 = { rho_0, const_p * rho_0 };
+
+        //u_4 = { 0.0, 0.0, 0.0 };
+        //s_4 = { 1.0, 1.0};
+
+        b_4.z = b_1.z;
+
+        double Br1 = b_1.x * sin(phi) + b_1.y * cos(phi);
+        double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
+        //double Br = Br1 + Bo_init * cos(pi / 2.0 - phi) * (-1.0 + kv(1.0/r));
+        //double Br = 0.0;
+
+
+        double Bphi1 = b_1.x * sin(phi) + b_1.y * cos(phi);
+        double Bphi2 = b_2.x * sin(phi) + b_2.y * cos(phi);
+        double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r4 - r);
+        //Bphi = 0.0;
+
+        //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
+
+        b_4.x = (Br * cos(phi) - Bphi * sin(phi));
+        b_4.y = (Br * sin(phi) + Bphi * cos(phi));
+
+        double Br_dipole = Bo_init * cos(pi / 2.0 - phi);
+        double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
+
+
+        if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+        {
+            Vthe = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+        }
+
+        u_4.x = (Vr * cos(phi) + Vthe * sin(phi));
+        u_4.y = (Vr * sin(phi) - Vthe * cos(phi));
+        u_4.z = vphi;
+    }
+    else
+    {
+        s_4 = s[(m)*N + n - 1];
+        u_4 = u[(m)*N + n - 1];
+        b_4 = b[(m)*N + n - 1];
+        r4 = R_CENTER(n - 1);
+        phi4 = phi;
+    }
+
+    if (n >= 2)
+    {
+        s_41 = s[(m)*N + n - 2];
+        u_41 = u[(m)*N + n - 2];
+        b_41 = b[(m)*N + n - 2];
+        r41 = R_CENTER(n - 2);
+        phi41 = phi;
+    }
+
+    if ((m == 0))
+    {
+        r3 = r;
+        phi3 = -pi / 2.0;
+        // симметри€
+        s_3 = s_1;
+        u_3 = u_1;
+        b_3 = b_1;
+        u_3.x = 0.0;
+        u_3.z = 0.0;
+        b_3.x = 0.0;
+        b_3.z = 0.0;
+    }
+    else
+    {
+        s_3 = s[(m - 1) * N + (n)];
+        u_3 = u[(m - 1) * N + (n)];
+        b_3 = b[(m - 1) * N + (n)];
+        r3 = r;
+        phi3 = PHI_CENTER(m - 1);
+    }
+
+    if (m >= 2)
+    {
+        s_31 = s[(m - 2) * N + (n)];
+        u_31 = u[(m - 2) * N + (n)];
+        b_31 = b[(m - 2) * N + (n)];
+        r31 = r;
+        phi31 = PHI_CENTER(m - 2);
+    }
+
+
+    double Q = 1.0;
+    double PQ = 0.0;
+    double2 PS = { 0.0, 0.0 };
+    double3 PU = { 0.0, 0.0, 0.0 };
+    double3 PB = { 0.0, 0.0, 0.0 };
+    double Pdiv = 0.0;
+
+    double r_g, phi_g, x_g, y_g;   // r и phi грани
+    double n1, n2;
+    double rho_L, rho_R;
+    double p_L, p_R;
+    double Vr, Vphi;
+    double Br, Bphi;
+    double u_L, v_L, u_R, v_R, bx_L, by_L, bx_R, by_R;
+    double Bx_dipole_, By_dipole_;
+
+    double Vr1, Vr2, Vr4, dr2, dr4;
+    dr2 = r2 - r;
+    dr4 = r - r4;
+
+
+    // ѕеред распадом надо определить нормаль к грани и разложить все вектора (скорости и магнитного пол€) по этой нормали
+    // “акже предлагаю снести на грань с двух сторон все значени€ в пол€рной системе координат
+    if (true)
+    {
+        double Vr_L, Vphi_L, Vr_R, Vphi_R;
+        double Br_L, Bphi_L, Br_R, Bphi_R;
+        double Vr3, Vr5, Vr31, Vr51, Vr21, Vr41;
+        double Br1, Br2, Br4, Br3, Br5, Br31, Br51, Br21, Br41;
+        double Vphi1, Vphi2, Vphi4, Vphi3, Vphi5, Vphi31, Vphi51, Vphi21, Vphi41;
+        double Bphi1, Bphi2, Bphi4, Bphi3, Bphi5, Bphi31, Bphi51, Bphi21, Bphi41;
+
+        Vr1 = u_1.x * cos(phi) + u_1.y * sin(phi);
+        Vr2 = u_2.x * cos(phi2) + u_2.y * sin(phi2);
+        Vr3 = u_3.x * cos(phi3) + u_3.y * sin(phi3);
+        Vr4 = u_4.x * cos(phi4) + u_4.y * sin(phi4);
+        Vr5 = u_5.x * cos(phi5) + u_5.y * sin(phi5);
+
+        Vphi1 = -u_1.x * sin(phi) + u_1.y * cos(phi);
+        Vphi2 = -u_2.x * sin(phi2) + u_2.y * cos(phi2);
+        Vphi3 = -u_3.x * sin(phi3) + u_3.y * cos(phi3);
+        Vphi4 = -u_4.x * sin(phi4) + u_4.y * cos(phi4);
+        Vphi5 = -u_5.x * sin(phi5) + u_5.y * cos(phi5);
+
+        Br1 = b_1.x * cos(phi) + b_1.y * sin(phi);
+        Br2 = b_2.x * cos(phi2) + b_2.y * sin(phi2);
+        Br3 = b_3.x * cos(phi3) + b_3.y * sin(phi3);
+        Br4 = b_4.x * cos(phi4) + b_4.y * sin(phi4);
+        Br5 = b_5.x * cos(phi5) + b_5.y * sin(phi5);
+
+        Bphi1 = -b_1.x * sin(phi) + b_1.y * cos(phi);
+        Bphi2 = -b_2.x * sin(phi2) + b_2.y * cos(phi2);
+        Bphi3 = -b_3.x * sin(phi3) + b_3.y * cos(phi3);
+        Bphi4 = -b_4.x * sin(phi4) + b_4.y * cos(phi4);
+        Bphi5 = -b_5.x * sin(phi5) + b_5.y * cos(phi5);
+
+        
+        // r+ грань
+        if (true)
+        {
+            n1 = x / r;
+            n2 = y / r;
+            r_g = R_EDGE(n + 1);
+            phi_g = phi;
+            x_g = r_g * cos(phi_g);
+            y_g = r_g * sin(phi_g);
+
+
+            rho_L = linear(r4, s_4.x * kv(r4), r, s_1.x * kv(r), r2, s_2.x * kv(r2), r_g) / kv(r_g);
+            if (rho_L <= 0.0) rho_L = s_1.x;
+            p_L = const_p * rho_L;
+
+            Vr_L = linear(r4, Vr4, r, Vr1, r2, Vr2, r_g);
+            Vphi_L = linear(r4, Vphi4, r, Vphi1, r2, Vphi2, r_g);
+            u_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+            v_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+            Br_L = linear(r4, Br4, r, Br1, r2, Br2, r_g);
+            Bphi_L = linear(r4, Bphi4, r, Bphi1, r2, Bphi2, r_g);
+            bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+            by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+            if ((n <= N - 3))
+            {
+                rho_R = linear(r, s_1.x * kv(r), r2, s_2.x * kv(r2), r21, s_21.x * kv(r21), r_g) / kv(r_g);
+                if (rho_R <= 0.0) rho_R = s_2.x;
+
+                Vr21 = u_21.x * cos(phi21) + u_21.y * sin(phi21);
+                Vphi21 = -u_21.x * sin(phi21) + u_21.y * cos(phi21);
+                Vr_R = linear(r, Vr1, r2, Vr2, r21, Vr21, r_g);
+                Vphi_R = linear(r, Vphi1, r2, Vphi2, r21, Vphi21, r_g);
+
+                Br21 = b_21.x * cos(phi21) + b_21.y * sin(phi21);
+                Bphi21 = -b_21.x * sin(phi21) + b_21.y * cos(phi21);
+                Br_R = linear(r, Br1, r2, Br2, r21, Br21, r_g);
+                Bphi_R = linear(r, Bphi1, r2, Bphi2, r21, Bphi21, r_g);
+            }
+            else
+            {
+                rho_R = s_2.x * kv(r2 / r_g);
+                Vr_R = Vr2;
+                Vphi_R = Vphi2;
+                Br_R = Br2;
+                Bphi_R = Bphi2;
+            }
+
+            p_R = const_p * rho_R;
+            u_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+            v_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+            bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+            by_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+
+
+            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+            By_dipole_ = By_dipole(r_g, phi_g);
+
+
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+                u_R, v_R, u_2.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_2.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+
+            if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
+            {
+                printf("Problems P[4] = %lf, %lf, %lf, %lf, %lf \n", P[4], P[5], P[6], P[0], P[7]);
+            }
+
+            PS.x = PS.x + P[0] * dphi * r_g;
+            PS.y = PS.y + P[7] * dphi * r_g;
+            PU.x = PU.x + P[1] * dphi * r_g;
+            PU.y = PU.y + P[2] * dphi * r_g;
+            PU.z = PU.z + P[3] * dphi * r_g;
+            PB.x = PB.x + P[4] * dphi * r_g;
+            PB.y = PB.y + P[5] * dphi * r_g;
+            PB.z = PB.z + P[6] * dphi * r_g;
+            //Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+            Pdiv = Pdiv + dphi * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+        }
+
+        P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+        // phi- грань
+        if (true)
+        {
+            r_g = r;
+            phi_g = PHI_LEFT(m);
+            x_g = r_g * cos(phi_g);
+            y_g = r_g * sin(phi_g);
+            n1 = y_g / r_g;
+            n2 = -x_g / r_g;
+
+
+            rho_L = linear(phi5, s_5.x, phi, s_1.x, phi3, s_3.x, phi_g);
+            if (rho_L <= 0.0) rho_L = s_1.x;
+            p_L = const_p * rho_L;
+
+            Vr_L = linear(phi5, Vr5, phi, Vr1, phi3, Vr3, phi_g);
+            Vphi_L = linear(phi5, Vphi5, phi, Vphi1, phi3, Vphi3, phi_g);
+            u_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+            v_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+            Br_L = linear(phi5, Br5, phi, Br1, phi3, Br3, phi_g);
+            Bphi_L = linear(phi5, Bphi5, phi, Bphi1, phi3, Bphi3, phi_g);
+            bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+            by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+            if (m >= 2)
+            {
+                rho_R = linear(phi, s_1.x, phi3, s_3.x, phi31, s_31.x, phi_g);
+                if (rho_R <= 0.0) rho_R = s_3.x;
+
+                Vr31 = u_31.x * cos(phi31) + u_31.y * sin(phi31);
+                Vphi31 = -u_31.x * sin(phi31) + u_31.y * cos(phi31);
+                Vr_R = linear(phi, Vr1, phi3, Vr3, phi31, Vr31, phi_g);
+                Vphi_R = linear(phi, Vphi1, phi3, Vphi3, phi31, Vphi31, phi_g);
+
+                Br31 = b_31.x * cos(phi31) + b_31.y * sin(phi31);
+                Bphi31 = -b_31.x * sin(phi31) + b_31.y * cos(phi31);
+                Br_R = linear(phi, Br1, phi3, Br3, phi31, Br31, phi_g);
+                Bphi_R = linear(phi, Bphi1, phi3, Bphi3, phi31, Bphi31, phi_g);
+            }
+            else
+            {
+                rho_R = s_3.x * kv(r3 / r_g);
+                Vr_R = Vr3;
+                Vphi_R = Vphi3;
+                Br_R = Br3;
+                Bphi_R = Bphi3;
+            }
+
+            p_R = const_p * rho_R;
+            u_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+            v_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+            bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+            by_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+
+
+            if (m == 0)
+            {
+                u_R = -u_L;
+                v_R = v_L;
+                rho_R = rho_L;
+                p_R = p_L;
+                bx_R = -bx_L;
+                by_R = by_L;
+            }
+
+            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+            By_dipole_ = By_dipole(r_g, phi_g);
+
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+                u_R, v_R, u_3.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_3.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+
+            PS.x = PS.x + P[0] * DR(n);
+            PS.y = PS.y + P[7] * DR(n);
+            PU.x = PU.x + P[1] * DR(n);
+            PU.y = PU.y + P[2] * DR(n);
+            PU.z = PU.z + P[3] * DR(n);
+            PB.x = PB.x + P[4] * DR(n);
+            PB.y = PB.y + P[5] * DR(n);
+            PB.z = PB.z + P[6] * DR(n);
+            //Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+            Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+        }
+
+        P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+        // r- грань
+        if (true)
+        {
+            n1 = -x / r;
+            n2 = -y / r;
+            r_g = R_EDGE(n);
+            phi_g = phi;
+            x_g = r_g * cos(phi_g);
+            y_g = r_g * sin(phi_g);
+
+            rho_L = linear(r2, s_2.x * kv(r2), r, s_1.x * kv(r), r4, s_4.x * kv(r4), r_g) / kv(r_g);
+            if (rho_L <= 0.0) rho_L = s_1.x;
+            p_L = const_p * rho_L;
+
+            Vr_L = linear(r2, Vr2, r, Vr1, r4, Vr4, r_g);
+            Vphi_L = linear(r2, Vphi2, r, Vphi1, r4, Vphi4, r_g);
+            u_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+            v_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+            Br_L = linear(r2, Br2, r, Br1, r4, Br4, r_g);
+            Bphi_L = linear(r2, Bphi2, r, Bphi1, r4, Bphi4, r_g);
+            bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+            by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+            if (n >= 2)
+            {
+                rho_R = linear(r, s_1.x * kv(r), r4, s_4.x * kv(r4), r41, s_41.x * kv(r41), r_g) / kv(r_g);
+                if (rho_R <= 0.0) rho_R = s_4.x;
+
+                Vr41 = u_41.x * cos(phi41) + u_41.y * sin(phi41);
+                Vphi41 = -u_41.x * sin(phi41) + u_41.y * cos(phi41);
+                Vr_R = linear(r, Vr1, r4, Vr4, r41, Vr41, r_g);
+                Vphi_R = linear(r, Vphi1, r4, Vphi4, r41, Vphi41, r_g);
+
+                Br41 = b_41.x * cos(phi41) + b_41.y * sin(phi41);
+                Bphi41 = -b_41.x * sin(phi41) + b_41.y * cos(phi41);
+                Br_R = linear(r, Br1, r4, Br4, r41, Br41, r_g);
+                Bphi_R = linear(r, Bphi1, r4, Bphi4, r41, Bphi41, r_g);
+            }
+            else
+            {
+                rho_R = s_4.x * kv(r4 / r_g);
+                Vr_R = Vr4;
+                Vphi_R = Vphi4;
+                Br_R = Br4;
+                Bphi_R = Bphi4;
+            }
+
+            p_R = const_p * rho_R;
+            u_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+            v_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+            bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+            by_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+
+            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+            By_dipole_ = By_dipole(r_g, phi_g);
+
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+                u_R, v_R, u_4.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_4.z, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
+
+
+            PS.x = PS.x + P[0] * dphi * r_g;
+            PS.y = PS.y + P[7] * dphi * r_g;
+            PU.x = PU.x + P[1] * dphi * r_g;
+            PU.y = PU.y + P[2] * dphi * r_g;
+            PU.z = PU.z + P[3] * dphi * r_g;
+            PB.x = PB.x + P[4] * dphi * r_g;
+            PB.y = PB.y + P[5] * dphi * r_g;
+            PB.z = PB.z + P[6] * dphi * r_g;
+            //Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
+            Pdiv = Pdiv + dphi * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+        }
+
+        P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+        // phi+ грань
+        if (true)
+        {
+            r_g = r;
+            phi_g = PHI_RIGHT(m);
+            x_g = r_g * cos(phi_g);
+            y_g = r_g * sin(phi_g);
+            n1 = -y_g / r_g;
+            n2 = x_g / r_g;
+
+            
+            rho_L = linear(phi3, s_3.x, phi, s_1.x, phi5, s_5.x, phi_g);
+            if (rho_L <= 0.0) rho_L = s_1.x;
+            p_L = const_p * rho_L;
+
+            Vr_L = linear(phi3, Vr3, phi, Vr1, phi5, Vr5, phi_g);
+            Vphi_L = linear(phi3, Vphi3, phi, Vphi1, phi5, Vphi5, phi_g);
+            u_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+            v_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+            Br_L = linear(phi3, Br3, phi, Br1, phi5, Br5, phi_g);
+            Bphi_L = linear(phi3, Bphi3, phi, Bphi1, phi5, Bphi5, phi_g);
+            bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+            by_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+            if (m <= M - 3)
+            {
+                rho_R = linear(phi, s_1.x, phi5, s_5.x, phi51, s_51.x, phi_g);
+                if (rho_R <= 0.0) rho_R = s_5.x;
+
+                Vr51 = u_51.x * cos(phi51) + u_51.y * sin(phi51);
+                Vphi51 = -u_51.x * sin(phi51) + u_51.y * cos(phi51);
+                Vr_R = linear(phi, Vr1, phi5, Vr5, phi51, Vr51, phi_g);
+                Vphi_R = linear(phi, Vphi1, phi5, Vphi5, phi51, Vphi51, phi_g);
+
+                Br51 = b_51.x * cos(phi51) + b_51.y * sin(phi51);
+                Bphi51 = -b_51.x * sin(phi51) + b_51.y * cos(phi51);
+                Br_R = linear(phi, Br1, phi5, Br5, phi51, Br51, phi_g);
+                Bphi_R = linear(phi, Bphi1, phi5, Bphi5, phi51, Bphi51, phi_g);
+            }
+            else
+            {
+                rho_R = s_5.x * kv(r5 / r_g);
+                Vr_R = Vr5;
+                Vphi_R = Vphi5;
+                Br_R = Br5;
+                Bphi_R = Bphi5;
+            }
+
+            p_R = const_p * rho_R;
+            u_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+            v_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+            bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+            by_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+
+            if (m == M - 1)
+            {
+                u_R = -u_L;
+                v_R = v_L;
+                rho_R = rho_L;
+                p_R = p_L;
+                bx_R = -bx_L;
+                by_R = by_L;
+            }
+
+            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+            By_dipole_ = By_dipole(r_g, phi_g);
+
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, u_1.z, bx_L + Bx_dipole_, by_L + By_dipole_, b_1.z, rho_R, Q, p_R, //
+                u_R, v_R, u_5.z, bx_R + Bx_dipole_, by_R + By_dipole_, b_5.z, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+
+
+            PS.x = PS.x + P[0] * DR(n);
+            PS.y = PS.y + P[7] * DR(n);
+            PU.x = PU.x + P[1] * DR(n);
+            PU.y = PU.y + P[2] * DR(n);
+            PU.z = PU.z + P[3] * DR(n);
+            PB.x = PB.x + P[4] * DR(n);
+            PB.y = PB.y + P[5] * DR(n);
+            PB.z = PB.z + P[6] * DR(n);
+            //Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
+            Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+        }
+
+    }
+
+
+    if (*T > tmin)
+    {
+        atomicMinDouble(T, tmin);
+    }
+
+    double dV = CELL_AREA(n);
+
+    double Fx = 0.0, Fy = 0.0;
+
+    // ¬ычисл€ем силы
+    if (true)
+    {
+        double fr = 0.0;
+        fr = (F_grav + F_continuum) * s_1.x / kv(r);  // —ила прит€жени€ к звезде + радиационное отталкивание от континуума
+
+        if (true)
+        {
+            // Line-driven force
+            //double Vr2 = (u_2.x * (x + dx) + u_2.y * y) / sqrt(kvv(0.0, x + dx, y));
+            //double Vr3 = (u_3.x * x + u_3.y * (y - dy)) / sqrt(kvv(0.0, x, y - dy));
+            //double Vr5 = (u_5.x * x + u_5.y * (y + dy)) / sqrt(kvv(0.0, x, y + dy));
+            //double Vr4 = (u_4.x * (x - dx) + u_4.y * y) / sqrt(kvv(0.0, x - dx, y));
+            //double dVrdr = ((Vr2 - Vr4) / (2 * dx) * x + (Vr5 - Vr3) / (2 * dy) * y) / r;
+
+
+            //double dVrdr = DERIVATIVE(Vr4, Vr1, Vr2, dr4, dr2);
+            double dVrdr = (Vr2 - Vr1) / dr2;
+
+            //if (isnan(dVrdr) == true || dVrdr == 0.0)
+            //{
+            //    printf("Problems fr = %lf, %lf, %lf, %lf \n", Vr2, Vr1, dr2, pow(dVrdr, alpha_line));
+            //}
+
+            //dVrdr = max(dVrdr, 1.0);
+
+            double sigma = fabs(dVrdr * r / Vr1) - 1.0;  // Vr1
+            double muc = 1.0 - 1.0 / kv(r);
+
+            double ff = 1.0;
+
+            if (fabs(dVrdr) > 0.00001)
+            {
+                ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
+                    ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
+
+                if (isnan(ff) == true)
+                {
+                    printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
+                }
+            }
+
+            //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
+            //double muc = sqrt(1.0 - 1.0 / kv(dist));
+            //double fD = (pow(1.0 + sigma, 1.6) - pow(1.0 + sigma * kv(muc), 1.6)) / (1.6 * (1.0 - kv(muc)) * sigma * pow(1.0 + sigma, 0.6));
+
+            //fr += s_1.x * fD * 6.9152 * pow(5.50815E-7 / s_1.x * fabs(dVrdr), 0.6) / kv(dist);
+
+            fr += F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
+
+            if (isnan(fr) == true)
+            {
+                printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
+            }
+
+
+            //double vth = sqrt(const_p);
+            //double vth = sqrt(const_p * sqrt(1.0 / r));
+            //double tt = F_line * s_1.x * vth;
+            //double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
+            //fr += F_continuum * s_1.x * Mt / kv(r);
+
+            //if (fr > 100.0)
+            //{
+            //    printf("Problems fr = %lf", fr);
+            //}
+
+        }
+
+        //if (fr < 0.0 && Vr1 <= 0.0)
+        //{
+        //    fr = 0.000001;
+        //}
+
+        Fx = fr * x / r;
+        Fy = fr * y / r;
+    }
+
+
+    double bx = b_1.x + Bx_dipole(r, phi);
+    double by = b_1.y + By_dipole(r, phi);
+
+    //Pdiv = Pdiv + dV * b_1.x / x;
+    Pdiv = Pdiv + dV * bx / x;
+    //Pdiv = 0.0;
+
+
+    s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
+    //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // ¬ декартовых координатах
+    if (s2[index].x <= 0)
+    {
+        printf("Problemsssss! x = %lf, y = %lf, ro = %lf, T = %lf, ro = %lf \n", x, y, s2[index].x, *T_do, s_1.x);
+        s2[index].x = s_1.x;
+    }
+
+    //u2[index].x = (s_1.x * u_1.x - (*T_do / dV) * (PU.x + (b_1.x/cpi4)*Pdiv ) - *T_do * (s_1.x * u_1.y * u_1.x) / y) / s2[index].x;
+    //u2[index].y = (s_1.x * u_1.y - (*T_do / dV) * (PU.y + (b_1.y / cpi4) * Pdiv) - *T_do * s_1.x * u_1.y * u_1.y / y) / s2[index].x;
+    //b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV) - *T_do * (u_1.y*b_1.x - u_1.x * b_1.y)/y;
+    //b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
+    //b2[index].z = (b_1.x - *T_do * (PB.z) / dV) - *T_do * (u_1.y * b_1.z) / y;
+
+    //s2[index].y = ( ((s_1.y / (ggg - 1) + s_1.x * (u_1.x * u_1.x + u_1.y * u_1.y) * 0.5) - (*T_do / dV) * (PS.y + //
+    //    (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv) - //
+    //    *T_do * u_1.y * (ggg * s_1.y / (ggg - 1) + s_1.x * (u_1.x * u_1.x + u_1.y * u_1.y) * 0.5) / y) - //
+    //    0.5 * s2[index].x * (u2[index].x * u2[index].x + u2[index].y * u2[index].y) - kvv(b_1.x, b_1.y, b_1.z) / cpi8 ) * (ggg - 1);
+
+
+    //s2[index].x = s_1.x - *T_do * PS.x / dV - *T_do * s_1.x * u_1.y / y;
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.x * u_1.y - b_1.x * b_1.y /cpi4)/y ) / s2[index].x;
+
+    //double Smr = (s_1.x * kv(u_1.z) - kv(b_1.z) / cpi4 - (s_1.x * kv(u_1.x) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8 - kv(b_1.x) / cpi4)) / x;
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  + *T_do * Smr + *T_do * Fx) / s2[index].x;
+
+    //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.x) + kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+
+
+
+    u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (bx / cpi4) * Pdiv) / dV + *T_do * (s_1.x * (kv(u_1.z) - kv(u_1.x)) + (kv(bx) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+    u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (by / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - bx * by / cpi4) / x + *T_do * Fy) / s2[index].x;
+    u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - bx * b_1.z / cpi4) / x) / s2[index].x;
+
+
+
+    //u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (b_1.y / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.z) - kv(b_1.y)) / cpi4) / y ) / s2[index].x;
+    //b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV - *T_do*(u_1.y * b_1.x - b_1.y * u_1.x)/y);
+    //b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
+
+    b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
+    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * by - bx * u_1.y) / x);
+    b2[index].z = b_1.z - *T_do * (PB.z + u_1.z * Pdiv) / dV;
+
+    //s2[index].y = (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) - *T_do * (PS.y + (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv)//
+    //    / dV - *T_do * ( ( (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8)* u_1.y - b_1.y * skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z)/cpi4)/ y) //
+    //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
+
+
+    //s2[index].y = const_p * s2[index].x * sqrt(1.0 / r);
+    s2[index].y = const_p * s2[index].x;
+    //s2[index].y = s2[index].x;
+
+
+    //s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
+    //s2[index].y = s2[index].x;
+}
+
+
 __global__ void Kernel_TVD(double2* s, double3* u, double3* b, double2* s2, double3* u2, double3* b2, double* T, double* T_do, int i, int method)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;   // √лобальный индекс текущей €чейки (текущего потока)
@@ -3091,9 +3864,9 @@ int main(void)
     //return 0;
 
     // "save_2(512x256).bin"
-    string name1 = "save_3(256x120).bin";   // ќткуда скачиваем
-    string name2 = "save_3(256x120).bin";   //  уда сохран€ем
-    int all_step = 20000 * 6;  // 294
+    string name1 = "save_1(256x120).bin";   // ќткуда скачиваем
+    string name2 = "save_2(256x120).bin";   //  уда сохран€ем
+    int all_step = 5000 * 1;  // 294
 
 
     double2* host_s;
@@ -3310,7 +4083,7 @@ int main(void)
     // NO TVD
     for (int i = 0; i < all_step; i = i + 2)  // —колько шагов по времени делаем?
     {
-        if (i % 5000 == 0)
+        if (i % 1000 == 0)
         {
             cout << "Metod  " << meth << "   " << i <<  endl;
         }
@@ -3319,7 +4092,7 @@ int main(void)
             meth = 3;
         }*/
 
-        add2 << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s, u, b, s2, u2, b2, T, T_do, i, meth);
+        add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s, u, b, s2, u2, b2, T, T_do, i, meth);
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> >  (s, u, b, s2, u2, b2, T, T_do, i, meth)
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
@@ -3346,7 +4119,7 @@ int main(void)
 
 
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth)
-        add2 << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth);
+        add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) { fprintf(stderr, "3  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));   exit(-1); }
         cudaStatus = cudaDeviceSynchronize();
