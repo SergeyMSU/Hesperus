@@ -10,8 +10,8 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 256 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 120 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 2048 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (6.0)             // Внешний радиус сетки
 #define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
@@ -68,20 +68,22 @@
 #define CELL_AREA(i) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * dphi)
 
 
-#define const_p 0.000155623  // (0.000447362)     // p = const_p * rho
-#define rho_in 1.0 // (0.220637)     // p = const_p * rho
-#define F_grav (-0.135399)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0570027)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.0276084)     // Коэффициент внутри line-driven силы
+#define const_p 0.000186401  // (0.000447362)     // p = const_p * rho
+//#define rho_in 0.8 // (0.220637)     // p = const_p * rho
+#define rho_in 0.45 // (0.220637)     // p = const_p * rho
+
+#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.65) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 1.53551// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 0.582751 // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.112766) // (0.266667)
+#define V_phi_init (0.0) // (0.266667)     Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -2080,7 +2082,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     
     if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
     {
-        printf("Problems P[4] = %lf, %lf, %lf, %lf, %lf \n", P[4], P[5], P[6], P[0], P[7]);
+        printf("Problems P[4] = %lf, %lf, %lf, %lf, %lf, %lf, %lf, %d, %d \n", P[4], P[5], P[6], P[0], P[7], rho_L, rho_R, n, m);
     }
     
     PS.x = PS.x + P[0] * dphi * r_g;
@@ -2316,7 +2318,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
                 if (isnan(ff) == true)
                 {
-                    printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
+                    //printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
                 }
             }
 
@@ -2330,7 +2332,7 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
 
             if (isnan(fr) == true)
             {
-                printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
+                //printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
             }
 
 
@@ -2722,6 +2724,11 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             x_g = r_g * cos(phi_g);
             y_g = r_g * sin(phi_g);
 
+            if (r_g > r2 || r_g < r4)
+            {
+                printf("Problems rr:  %lf, %lf, %lf, %d, %d \n", r_g, r2, r4, n, m);
+            }
+
 
             rho_L = linear(r4, s_4.x * kv(r4), r, s_1.x * kv(r), r2, s_2.x * kv(r2), r_g) / kv(r_g);
             if (rho_L <= 0.0) rho_L = s_1.x;
@@ -2785,7 +2792,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
             if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
             {
-                printf("Problems P[4] = %lf, %lf, %lf, %lf, %lf \n", P[4], P[5], P[6], P[0], P[7]);
+                printf("Problems P... = %lf, %lf, %lf, %lf, %lf, %lf, %lf, %d, %d \n", P[4], r_g, r2, P[0], P[7], rho_L, rho_R, n, m);
             }
 
             PS.x = PS.x + P[0] * dphi * r_g;
@@ -3137,7 +3144,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
                 if (isnan(ff) == true)
                 {
-                    printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
+                    //printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
                 }
             }
 
@@ -3150,10 +3157,10 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             double fline = F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
             fr += fline;
 
-            if (isnan(fr) == true)
-            {
-                printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
-            }
+            //if (isnan(fr) == true)
+            //{
+            //    printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
+            //}
 
 
             //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
@@ -3921,10 +3928,11 @@ int main(void)
     //test_polar_geometry();
     //return 0;
 
-    // "save_2(512x256).bin"
-    string name1 = "save_2(256x120).bin";   // Откуда скачиваем
-    string name2 = "save_2(256x120).bin";   // Куда сохраняем
-    int all_step = 20000 * 3;  // 294
+    // "save_zOph_2(256x120).bin"
+    // "save_zOph_3(350x2048).bin"   -  готовое решение без вращения и без магнитного поля
+    string name1 = "save_zOph_1(350x2048).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_1(350x2048).bin";   // Куда сохраняем
+    int all_step = 50000 * 6 * 9;// 1 * 1;  // 294
 
 
     double2* host_s;
@@ -4029,34 +4037,34 @@ int main(void)
 
             double dist = sqrt(x * x + y * y);
             double the = polar_angle(y, x);
-            double vr = 0.0001 + pow((1.0 - 1.0 / dist), 0.8);
+            double vr = 0.0009 + pow( max(1.0 - 1.0 / dist, 0.0), 0.71);
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
             double B0 = Bo_init;
             //if (the > pi / 2.0) Br = -Br;
 
 
-            //host_s[k] = { rho, const_p * rho};
+            host_s[k] = { rho, const_p * rho};
 
             //host_s[k] = {1.0, 0.000223681};
 
-            //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
+            host_u[k] = { vr * x / dist, vr * y / dist, vphi};
             //host_u[k].z = vphi;
             //host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
             // 
             //host_s[k] = { 1.0, 1.0};
             //host_u[k] = { 0.0, 0.0, 0.0 };
 
-            //host_s2[k] = host_s[k];
-            //host_u2[k] = host_u[k];
+            host_s2[k] = host_s[k];
+            host_u2[k] = host_u[k];
 
             double Br = B0 * cos(the) * pow(1.0 / dist, 3.0);
             double Bphi = -B0/2.0 * sin(the) * pow(1.0 / dist, 3.0);
 
             double Bx = Br * cos(phi) - Bphi * sin(phi);
             double By = Br * sin(phi) + Bphi * cos(phi);
-            host_b[k] = {Bx, By, 0.0 };
-            //host_b[k] = { 0.0, 0.0, 0.0 };
+            //host_b[k] = {Bx, By, 0.0 };
+            host_b[k] = { 0.0, 0.0, 0.0 };
             host_b2[k] = host_b[k];
         }
     }
@@ -4428,7 +4436,7 @@ int main(void)
         }
     }
 
-    cout << "Mass rashod N = " << 375.151 * Mas << " x 10^-8 MasSolar / year" << endl;
+    cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
 
     Mas = 0.0;
     for (int i = N / 2; i <= N / 2; i++)
@@ -4445,10 +4453,10 @@ int main(void)
         }
     }
 
-    cout << "Mass rashod N/2 = " << 375.151 * Mas << " x 10^-8 MasSolar / year" << endl;
+    cout << "Mass rashod N/2 = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
 
 
-    // Печатаем 1д файл
+    // Печатаем 1д файл по r
     if (true)
     {
         ofstream fout1dr;
@@ -4496,6 +4504,56 @@ int main(void)
         }
 
         fout1dr.close();
+    }
+
+    // Печатаем 1д файл по phi
+    if (true)
+    {
+        ofstream fout1dphi;
+        fout1dphi.open("param_for_texplot_1d_phi.txt");
+        fout1dphi << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\"" << endl;
+
+        for (int j = 0; j < M; j++)
+        {
+            int i = N - 2;
+            int k = j * N + i;
+            double r = R_CENTER(i);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double bx = host_b[k].x + Bx_dipole(r, phi);
+            double by = host_b[k].y + By_dipole(r, phi);
+
+
+            double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
+            if (host_s[k].x > 0.0)
+            {
+                Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
+                Temp = host_s[k].y / host_s[k].x;
+                if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
+                {
+                    Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                        sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
+                }
+            }
+
+            //Max_alf = 0.0;
+
+            double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
+            double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            fout1dphi << phi << " " << host_s[k].x << " " << host_s[k].y <<//
+                " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+                Max << " " << Max_alf << " " << Temp << endl;
+        }
+
+        fout1dphi.close();
     }
 
     return 0;
