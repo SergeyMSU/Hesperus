@@ -1,6 +1,6 @@
 #pragma once
 
-#define krit 0.3 // 0.25
+#define krit 0.1 // 0.25
 #define ggg (5.0/3.0)          // Показатель адиабаты
 #define ga (5.0/3.0)          // Показатель адиабаты
 #define g1 (ga - 1.0)

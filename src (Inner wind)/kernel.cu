@@ -118,7 +118,7 @@
 #define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.0) // (0.266667)     Скорость вращения звезды
+#define V_phi_init (0.266667)   //   Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -3170,7 +3170,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             //double dVrdr = DERIVATIVE(Vr4, Vr1, Vr2, dr4, dr2);
             double dVrdr = (Vr2 - Vr1) / dr2;
 
-            dVrdr = min(dVrdr, 100.0);
+            //dVrdr = min(dVrdr, 100.0);
 
             //if (isnan(dVrdr) == true || dVrdr == 0.0)
             //{
@@ -3977,11 +3977,12 @@ int main(void)
 
     // "save_zOph_2(256x120).bin"
     // "save_zOph_3(350x2048).bin" и "save_zOph_1(350x256).bin" (это со сгущением по phi и по r)   -  готовое решение без вращения и без магнитного поля
+    // "save_zOph_2(350x256).bin" - 7 часов с магнитным полем без вращения
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
-    string name1 = "save_zOph_2(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем
-    int all_step = 24000 * 60 * 5; // 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_zOph_3(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_3(350x256).bin";   // Куда сохраняем
+    int all_step = 24000 * 60 * 10; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double2* host_s;
