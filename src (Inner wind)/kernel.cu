@@ -11,11 +11,13 @@
 
 #define Omega 0.0
 #define N 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 2048 // 256 // //1280 //1280                 // Количество ячеек по y
+#define M 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (6.0)             // Внешний радиус сетки
 #define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
-#define dphi (pi/M)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define dphi (pi/M)           
+#define qphi (1.02)              // можно настроить; при большом M брать близким к 1
+#define M_HALF (M / 2)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -31,33 +33,65 @@
 #define DR(i) (DR1 * pow(qb, (i)))
 
 // Радиус центра i-й ячейки (i = 0..N-1)
-#define R_CENTER(i) ( (2.0/3.0) * \
+//#define R_CENTER(i) ( (2.0/3.0) * \
+//                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
+//                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
+//                        (sin(0.5 * dphi) / (0.5 * dphi)) )  // равномерный угол
+#define R_CENTER(i,j) ( (2.0/3.0) * \
                         (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
                         (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
-                        (sin(0.5 * dphi) / (0.5 * dphi)) )
+                        (sin(0.5 * DPHI(j)) / (0.5 * DPHI(j))) )
 //#define R_CENTER(i) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
 
-// ----------------- Угловое разбиение -----------------
+// ----------------- Угловое разбиение равномерное -----------------
 
-// Угловая граница с индексом k (k = 0..M): phi = -pi/2 + k * dphi
-#define PHI_EDGE(k) (-(pi) / 2.0 + (k) * dphi)
+//// Угловая граница с индексом k (k = 0..M): phi = -pi/2 + k * dphi
+//#define PHI_EDGE(k) (-(pi) / 2.0 + (k) * dphi)
+//
+//// Нижняя граница j-й ячейки (j = 0..M-1)
+//#define PHI_LEFT(j) (PHI_EDGE(j))
+//
+//// Верхняя граница j-й ячейки (j = 0..M-1)
+//#define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+//
+//// Центр j-й ячейки (как было ранее, можно оставить)
+//#define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
 
-// Нижняя граница j-й ячейки (j = 0..M-1)
-#define PHI_LEFT(j) (PHI_EDGE(j))
+//// Внутренняя дуга (при r = R_EDGE(i))
+//#define L_INNER(i) (R_EDGE(i) * dphi)
 
-// Верхняя граница j-й ячейки (j = 0..M-1)
+//// Внешняя дуга (при r = R_EDGE(i+1))
+//#define L_OUTER(i) (R_EDGE(i + 1) * dphi)
+
+// ----------------- Угловое разбиение неравномерное ----------------------------------------
+
+// Минимальный угловой шаг (у phi = 0)
+#define DPHI_MIN ((pi / 2.0) * (qphi - 1.0) / (pow(qphi, M_HALF) - 1.0))
+
+// Ширина j-й угловой ячейки (j = 0..M-1)
+#define DPHI(j) ((j) < M_HALF ? \
+                 DPHI_MIN * pow(qphi, M_HALF - 1 - (j)) : \
+                 DPHI_MIN * pow(qphi, (j) - M_HALF))
+
+// Угловая граница с индексом k (k = 0..M)
+#define PHI_EDGE(k) ((k) <= M_HALF ? \
+                     (-(pi) / 2.0 + DPHI_MIN * (pow(qphi, M_HALF) - pow(qphi, M_HALF - (k))) / (qphi - 1.0)) : \
+                     (DPHI_MIN * (pow(qphi, (k) - M_HALF) - 1.0) / (qphi - 1.0)))
+
+// Нижняя и верхняя границы j-й ячейки
+#define PHI_LEFT(j)  (PHI_EDGE(j))
 #define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
 
-// Центр j-й ячейки (как было ранее, можно оставить)
+// Центр j-й ячейки по углу (средний угол)
 #define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
 
-// ----------------- Длины рёбер ячейки (i,j) -----------------
-
 // Внутренняя дуга (при r = R_EDGE(i))
-#define L_INNER(i) (R_EDGE(i) * dphi)
+#define L_INNER(i,j) (R_EDGE(i) * DPHI(j))
 
 // Внешняя дуга (при r = R_EDGE(i+1))
-#define L_OUTER(i) (R_EDGE(i + 1) * dphi)
+#define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
+
+// ---------------------------------------------------------------------------------------------------------------------------
 
 // Левый и правый радиальные отрезки (равны DR(i))
 #define L_LEFT(i) (DR(i))
@@ -65,7 +99,8 @@
 
 // ----------------- Площадь (объём) ячейки -----------------
 
-#define CELL_AREA(i) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * dphi)
+//#define CELL_AREA(i) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * dphi)   // равномерный угол
+#define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
 #define const_p 0.000186401  // (0.000447362)     // p = const_p * rho
@@ -1808,7 +1843,7 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     *TT = *TT + *T_do;
     *T = 10000000;
     *i = *i + 1;
-    if (*i % 1000 == 0)
+    if (*i % 5000 == 0)
     {
         printf("i = %d,  TT all = %lf, hours = %lf; dT hours = %E \n", *i, *TT, *TT * 1.09556, *T_do * 1.09556);
     }
@@ -1836,7 +1871,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
     int n = index % N;                                   // номер ячейки по x (от 0)
     int m = (index - n) / N;                             // номер ячейки по y (от 0)
 
-    double r = R_CENTER(n);
+    double r = R_CENTER(n, m);
+    //double r = R_CENTER(n);
     double phi = PHI_CENTER(m);
 
     double y = r * sin(phi);
@@ -1906,7 +1942,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         s_2 = s[(m) * N + n + 1];
         u_2 = u[(m) * N + n + 1];
         b_2 = b[(m) * N + n + 1];
-        r2 = R_CENTER(n + 1);
+        //r2 = R_CENTER(n + 1);
+        r2 = R_CENTER(n + 1, m);
         phi2 = phi;
     }
 
@@ -1986,7 +2023,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         s_4 = s[(m)*N + n - 1];
         u_4 = u[(m)*N + n - 1];
         b_4 = b[(m)*N + n - 1];
-        r4 = R_CENTER(n - 1);
+        r4 = R_CENTER(n - 1, m);
+        //r4 = R_CENTER(n - 1);
         phi4 = phi;
     }
 
@@ -2276,7 +2314,8 @@ __global__ void add2(double2* s, double3* u, double3* b, double2* s2, double3* u
         atomicMinDouble(T, tmin);
     }
 
-    double dV = CELL_AREA(n);
+    double dV = CELL_AREA(n, m);
+    //double dV = CELL_AREA(n);
 
     double Fx = 0.0, Fy = 0.0;
 
@@ -2431,7 +2470,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
     int n = index % N;                                   // номер ячейки по x (от 0)
     int m = (index - n) / N;                             // номер ячейки по y (от 0)
 
-    double r = R_CENTER(n);
+    double r = R_CENTER(n, m);
+    //double r = R_CENTER(n);
     double phi = PHI_CENTER(m);
 
     double y = r * sin(phi);
@@ -2485,7 +2525,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_5 = s[(m + 1) * N + n];
         u_5 = u[(m + 1) * N + n];
         b_5 = b[(m + 1) * N + n];
-        r5 = r;
+        r5 = R_CENTER(n, m + 1);
         phi5 = PHI_CENTER(m + 1);
     }
 
@@ -2494,7 +2534,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_51 = s[(m + 2) * N + n];
         u_51 = u[(m + 2) * N + n];
         b_51 = b[(m + 2) * N + n];
-        r51 = r;
+        r51 = R_CENTER(n, m + 2);
         phi51 = PHI_CENTER(m + 2);
     }
 
@@ -2521,7 +2561,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_2 = s[(m)*N + n + 1];
         u_2 = u[(m)*N + n + 1];
         b_2 = b[(m)*N + n + 1];
-        r2 = R_CENTER(n + 1);
+        r2 = R_CENTER(n + 1, m);
+        //r2 = R_CENTER(n + 1);
         phi2 = phi;
     }
 
@@ -2530,7 +2571,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_21 = s[(m)*N + n + 2];
         u_21 = u[(m)*N + n + 2];
         b_21 = b[(m)*N + n + 2];
-        r21 = R_CENTER(n + 2);
+        r21 = R_CENTER(n + 2, m);
+        //r21 = R_CENTER(n + 2);
         phi21 = phi;
     }
 
@@ -2612,7 +2654,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_4 = s[(m)*N + n - 1];
         u_4 = u[(m)*N + n - 1];
         b_4 = b[(m)*N + n - 1];
-        r4 = R_CENTER(n - 1);
+        r4 = R_CENTER(n - 1, m);
+        //r4 = R_CENTER(n - 1);
         phi4 = phi;
     }
 
@@ -2621,7 +2664,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_41 = s[(m)*N + n - 2];
         u_41 = u[(m)*N + n - 2];
         b_41 = b[(m)*N + n - 2];
-        r41 = R_CENTER(n - 2);
+        r41 = R_CENTER(n - 2, m);
+        //r41 = R_CENTER(n - 2);
         phi41 = phi;
     }
 
@@ -2643,7 +2687,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_3 = s[(m - 1) * N + (n)];
         u_3 = u[(m - 1) * N + (n)];
         b_3 = b[(m - 1) * N + (n)];
-        r3 = r;
+        r3 = R_CENTER(n, m - 1);
         phi3 = PHI_CENTER(m - 1);
     }
 
@@ -2652,7 +2696,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         s_31 = s[(m - 2) * N + (n)];
         u_31 = u[(m - 2) * N + (n)];
         b_31 = b[(m - 2) * N + (n)];
-        r31 = r;
+        r31 = R_CENTER(n, m - 2);
         phi31 = PHI_CENTER(m - 2);
     }
 
@@ -2795,16 +2839,16 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 printf("Problems P... = %lf, %lf, %lf, %lf, %lf, %lf, %lf, %d, %d \n", P[4], r_g, r2, P[0], P[7], rho_L, rho_R, n, m);
             }
 
-            PS.x = PS.x + P[0] * dphi * r_g;
-            PS.y = PS.y + P[7] * dphi * r_g;
-            PU.x = PU.x + P[1] * dphi * r_g;
-            PU.y = PU.y + P[2] * dphi * r_g;
-            PU.z = PU.z + P[3] * dphi * r_g;
-            PB.x = PB.x + P[4] * dphi * r_g;
-            PB.y = PB.y + P[5] * dphi * r_g;
-            PB.z = PB.z + P[6] * dphi * r_g;
+            PS.x = PS.x + P[0] * DPHI(m) * r_g;
+            PS.y = PS.y + P[7] * DPHI(m) * r_g;
+            PU.x = PU.x + P[1] * DPHI(m) * r_g;
+            PU.y = PU.y + P[2] * DPHI(m) * r_g;
+            PU.z = PU.z + P[3] * DPHI(m) * r_g;
+            PB.x = PB.x + P[4] * DPHI(m) * r_g;
+            PB.y = PB.y + P[5] * DPHI(m) * r_g;
+            PB.z = PB.z + P[6] * DPHI(m) * r_g;
             //Pdiv = Pdiv + dphi * r_g * ( n1 * (bx_L + bx_R) / 2.0 + n2 * (by_L + by_R) / 2.0);
-            Pdiv = Pdiv + dphi * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+            Pdiv = Pdiv + DPHI(m) * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
         }
 
         P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
@@ -2889,7 +2933,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             By_dipole_ = By_dipole(r_g, phi_g);
 
             tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, x, y));
 
             PS.x = PS.x + P[0] * DR(n);
             PS.y = PS.y + P[7] * DR(n);
@@ -2986,16 +3030,16 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
 
 
-            PS.x = PS.x + P[0] * dphi * r_g;
-            PS.y = PS.y + P[7] * dphi * r_g;
-            PU.x = PU.x + P[1] * dphi * r_g;
-            PU.y = PU.y + P[2] * dphi * r_g;
-            PU.z = PU.z + P[3] * dphi * r_g;
-            PB.x = PB.x + P[4] * dphi * r_g;
-            PB.y = PB.y + P[5] * dphi * r_g;
-            PB.z = PB.z + P[6] * dphi * r_g;
+            PS.x = PS.x + P[0] * DPHI(m) * r_g;
+            PS.y = PS.y + P[7] * DPHI(m) * r_g;
+            PU.x = PU.x + P[1] * DPHI(m) * r_g;
+            PU.y = PU.y + P[2] * DPHI(m) * r_g;
+            PU.z = PU.z + P[3] * DPHI(m) * r_g;
+            PB.x = PB.x + P[4] * DPHI(m) * r_g;
+            PB.y = PB.y + P[5] * DPHI(m) * r_g;
+            PB.z = PB.z + P[6] * DPHI(m) * r_g;
             //Pdiv = Pdiv + dphi * r_g * (n1 * (b_1.x + b_4.x) / 2.0 + n2 * (b_1.y + b_4.y) / 2.0);
-            Pdiv = Pdiv + dphi * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+            Pdiv = Pdiv + DPHI(m) * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
         }
 
         P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
@@ -3079,7 +3123,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
             By_dipole_ = By_dipole(r_g, phi_g);
 
             tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, Q, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, Q, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, dphi * r, method, x, y));
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, x, y));
 
 
             PS.x = PS.x + P[0] * DR(n);
@@ -3102,7 +3146,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
         atomicMinDouble(T, tmin);
     }
 
-    double dV = CELL_AREA(n);
+    double dV = CELL_AREA(n, m);
+    //double dV = CELL_AREA(n);
 
     double Fx = 0.0, Fy = 0.0;
 
@@ -3124,6 +3169,8 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
             //double dVrdr = DERIVATIVE(Vr4, Vr1, Vr2, dr4, dr2);
             double dVrdr = (Vr2 - Vr1) / dr2;
+
+            dVrdr = min(dVrdr, 100.0);
 
             //if (isnan(dVrdr) == true || dVrdr == 0.0)
             //{
@@ -3164,7 +3211,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
 
             //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
-            tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0001));
+            tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0005));
 
             if (*T > tmin)
             {
@@ -3925,16 +3972,16 @@ void test_polar_geometry(void)
 
 int main(void)
 {
-    //test_polar_geometry();
-    //return 0;
+    /*test_polar_geometry();
+    return 0;*/
 
     // "save_zOph_2(256x120).bin"
-    // "save_zOph_3(350x2048).bin"   -  готовое решение без вращения и без магнитного поля
+    // "save_zOph_3(350x2048).bin" и "save_zOph_1(350x256).bin" (это со сгущением по phi и по r)   -  готовое решение без вращения и без магнитного поля
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
-    string name1 = "save_zOph_1(350x2048).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_2(350x2048).bin";   // Куда сохраняем
-    int all_step = 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_zOph_2(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем
+    int all_step = 24000 * 60 * 5; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double2* host_s;
@@ -4019,7 +4066,7 @@ int main(void)
     //  x -> r
     //  y -> z
 
-
+    
 
     // Задаём начальные условия
     
@@ -4031,7 +4078,8 @@ int main(void)
             int n = k % N;                                   // номер ячейки по x (от 0)
             int m = (k - n) / N;                             // номер ячейки по y (от 0)
             double r, phi;
-            r = R_CENTER(n);
+            r = R_CENTER(n, m);
+            //r = R_CENTER(n);
             phi = PHI_CENTER(m);
 
             double x = r * cos(phi);
@@ -4372,7 +4420,8 @@ int main(void)
         int j = (k - i) / N;                             // номер ячейки по y (от 0)
         double r, phi;
         phi = PHI_CENTER(j);
-        r = R_CENTER(i);
+        r = R_CENTER(i, j);
+        //r = R_CENTER(i);
 
         double x, y;
         x = r * cos(phi);
@@ -4426,15 +4475,16 @@ int main(void)
     double Mas = 0.0;
     for (int i = N - 1; i < N; i++)
     {
-        double r = R_CENTER(i);
+        //double r = R_CENTER(i);
         for (int j = 0; j < M - 1; j++)
         {
+            double r = R_CENTER(i, j);
             double phi = PHI_CENTER(j);
             double x = r * cos(phi);
             int index = j * N + i;
 
             double Vr = host_u[index].x * cos(phi) + host_u[index].y * sin(phi);
-            Mas += (2.0 * pi * x * r * dphi) * Vr * host_s[index].x;
+            Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * host_s[index].x;
         }
     }
 
@@ -4443,15 +4493,16 @@ int main(void)
     Mas = 0.0;
     for (int i = N / 2; i <= N / 2; i++)
     {
-        double r = R_CENTER(i);
+        //double r = R_CENTER(i);
         for (int j = 0; j < M - 1; j++)
         {
+            double r = R_CENTER(i, j);
             double phi = PHI_CENTER(j);
             double x = r * cos(phi);
             int index = j * N + i;
 
             double Vr = host_u[index].x * cos(phi) + host_u[index].y * sin(phi);
-            Mas += (2.0 * pi * x * r * dphi) * Vr * host_s[index].x;
+            Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * host_s[index].x;
         }
     }
 
@@ -4469,7 +4520,8 @@ int main(void)
         {
             int j = int(M / 2);
             int k = j * N + i;
-            double r = R_CENTER(i);
+            double r = R_CENTER(i, j);
+            //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
 
             double x, y;
@@ -4519,7 +4571,8 @@ int main(void)
         {
             int i = N - 2;
             int k = j * N + i;
-            double r = R_CENTER(i);
+            double r = R_CENTER(i, j);
+            //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
 
             double x, y;
