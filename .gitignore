@@ -40,3 +40,9 @@ Data (Inner wind)/param_for_texplot_1d_r.txt
 Data (results)/param_for_texplot_1d_r.txt
 
 Data (results)/param_for_texplot_all.txt
+
+Data (Inner wind)/param_for_texplot_1d_phi.txt
+
+Data (Inner wind)/param_for_texplot_1d_r-1.txt
+
+Data (Inner wind)/param_for_texplot_1d_phi-1.txt

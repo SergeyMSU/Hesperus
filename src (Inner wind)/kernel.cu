@@ -3164,7 +3164,7 @@ __global__ void add2_TVD(double2* s, double3* u, double3* b, double2* s2, double
 
 
             //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
-            tmin = 0.1 * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0001));
+            tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0001));
 
             if (*T > tmin)
             {
@@ -3930,9 +3930,11 @@ int main(void)
 
     // "save_zOph_2(256x120).bin"
     // "save_zOph_3(350x2048).bin"   -  готовое решение без вращени€ и без магнитного пол€
+    // Ќачина€ с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придЄтс€ остановитьс€
+    // в 1 - коллебани€ на оси простирались примерно до x = 1.37
     string name1 = "save_zOph_1(350x2048).bin";   // ќткуда скачиваем
-    string name2 = "save_zOph_1(350x2048).bin";   //  уда сохран€ем
-    int all_step = 50000 * 6 * 9;// 1 * 1;  // 294
+    string name2 = "save_zOph_2(350x2048).bin";   //  уда сохран€ем
+    int all_step = 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double2* host_s;
