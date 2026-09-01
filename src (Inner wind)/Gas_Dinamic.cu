@@ -1587,6 +1587,224 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
 
 }
 
+__device__ double HLLDQ_Korolkov_psi(const double& ro_L, const double& psi_L, const double& p_L, const double& v1_L, const double& v2_L, const double& v3_L,//
+    const double& Bx_L, const double& By_L, const double& Bz_L, const double& ro_R, const double& psi_R, const double& p_R, const double& v1_R, const double& v2_R, const double& v3_R,//
+    const double& Bx_R, const double& By_R, const double& Bz_R, double* P, double& PQ, const double& n1, const double& n2, const double& n3, const double& rad, int metod, double ch, double& ch_new, double x, double y)
+{// Ќе работает, если скорость грани не нулева€
+ // –еализаци€ с дополнительной psi - очисткой от дивергенции магнитного пол€ GLM
+
+    double bx_L = Bx_L / spi4;
+    double by_L = By_L / spi4;
+    double bz_L = Bz_L / spi4;
+
+    double bx_R = Bx_R / spi4;
+    double by_R = By_R / spi4;
+    double bz_R = Bz_R / spi4;
+
+    double t1 = -n2;
+    double t2 = n1;
+    double t3 = 0.0;
+
+    double m1 = 0.0;
+    double m2 = 0.0;
+    double m3 = 1.0;
+
+
+    double u1, v1, w1, u2, v2, w2;
+    u1 = v1_L * n1 + v2_L * n2 + v3_L * n3;
+    v1 = v1_L * t1 + v2_L * t2 + v3_L * t3;
+    w1 = v1_L * m1 + v2_L * m2 + v3_L * m3;
+    u2 = v1_R * n1 + v2_R * n2 + v3_R * n3;
+    v2 = v1_R * t1 + v2_R * t2 + v3_R * t3;
+    w2 = v1_R * m1 + v2_R * m2 + v3_R * m3;
+
+    double bn1, bt1, bm1, bn2, bt2, bm2;
+    bn1 = bx_L * n1 + by_L * n2 + bz_L * n3;
+    bt1 = bx_L * t1 + by_L * t2 + bz_L * t3;
+    bm1 = bx_L * m1 + by_L * m2 + bz_L * m3;
+    bn2 = bx_R * n1 + by_R * n2 + bz_R * n3;
+    bt2 = bx_R * t1 + by_R * t2 + bz_R * t3;
+    bm2 = bx_R * m1 + by_R * m2 + bz_R * m3;
+
+    //cout << " = " << bt2 * bt2 + bm2 * bm2 << endl;
+
+    double sqrtroL = sqrt(ro_L);
+    double sqrtroR = sqrt(ro_R);
+    double ca_L = bn1 / sqrtroL;
+    double ca_R = bn2 / sqrtroR;
+    double cL = sqrt(ggg * p_L / ro_L);
+    double cR = sqrt(ggg * p_R / ro_R);
+
+    double bb_L = kv(bx_L) + kv(by_L) + kv(bz_L);
+    double bb_R = kv(bx_R) + kv(by_R) + kv(bz_R);
+
+    double aL = (kv(bx_L) + kv(by_L) + kv(bz_L)) / ro_L;
+    double aR = (kv(bx_R) + kv(by_R) + kv(bz_R)) / ro_R;
+
+    double uu_L = (kv(v1_L) + kv(v2_L) + kv(v3_L)) / 2.0;
+    double uu_R = (kv(v1_R) + kv(v2_R) + kv(v3_R)) / 2.0;
+
+    double cfL = sqrt((ggg * p_L + bb_L + //
+        sqrt(kv(ggg * p_L + bb_L) - 4.0 * ggg * p_L * kv(bn1))) / (2.0 * ro_L));
+    double cfR = sqrt((ggg * p_R + bb_R + //
+        sqrt(kv(ggg * p_R + bb_R) - 4.0 * ggg * p_R * kv(bn2))) / (2.0 * ro_R));
+
+
+    double SL = min(u1, u2) - max(cfL, cfR);
+    double SR = max(u1, u2) + max(cfL, cfR);
+
+    if (metod == 0)   // LAKS
+    {
+        double ap = (p_L + p_R) / 2.0;
+        double ro = (ro_L + ro_R) / 2.0;
+        double aC = (bn1 / sqrt(ro_L) + bn2 / sqrt(ro_R)) / 2.0;
+        double b2o = (aR + aL) / 2.0; // aL = b21, aR = b22
+        double cC = sqrt(ggg * ap / ro);
+
+        // ѕравильное вычисление быстрой скорости
+        double temp = b2o + cC * cC;
+        double discr = temp * temp - 4.0 * aC * aC * cC * cC;
+        if (discr < 0.0) discr = 0.0;   // защита от ошибок округлени€
+        double cfC = sqrt(0.5 * (temp + sqrt(discr)));
+
+        double TR0 = fabs(u1 + u2) / 2.0 + cfC;
+        double TL0 = -TR0;
+        SR = TR0;
+        SL = TL0;
+
+        if (isnan(SL) == true || isnan(SR) == true)
+        {
+            printf("Problems SL SR = %lf, %lf, %lf, %lf, %lf \n", SL, SR, aC, cC, cfC);
+        }
+    }
+
+    double pTL = p_L + bb_L / 2.0;
+    double pTR = p_R + bb_R / 2.0;
+
+    double suR = (SR - u2);
+    double suL = (SL - u1);
+
+    double SM = (suR * ro_R * u2 - suL * ro_L * u1 - pTR + pTL) //
+        / (suR * ro_R - suL * ro_L);
+
+    double PTT = (suR * ro_R * pTL - suL * ro_L * pTR + ro_L * ro_R * suR * suL * (u2 - u1))//
+        / (suR * ro_R - suL * ro_L);
+
+    double UU = max(fabs(SL), fabs(SR));
+    ch_new = UU;
+    double time = krit * rad / UU;
+
+
+
+    double FL[8], FR[8], UL[8], UR[8];
+
+    double e1 = p_L / g1 + ro_L * uu_L + bb_L / 2.0;
+    double e2 = p_R / g1 + ro_R * uu_R + bb_R / 2.0;
+
+
+    FL[0] = ro_L * u1;
+    FL[1] = ro_L * u1 * u1 + pTL - kv(bn1);
+    FL[2] = ro_L * u1 * v1 - bn1 * bt1;
+    FL[3] = ro_L * u1 * w1 - bn1 * bm1;
+    FL[4] = (e1 + pTL) * u1 - bn1 * (u1 * bn1 + v1 * bt1 + w1 * bm1);
+    //cout << uu_L << endl;
+    FL[5] = 0.0;
+    FL[6] = u1 * bt1 - v1 * bn1;
+    FL[7] = u1 * bm1 - w1 * bn1;
+
+    FR[0] = ro_R * u2;
+    FR[1] = ro_R * u2 * u2 + pTR - kv(bn2);
+    FR[2] = ro_R * u2 * v2 - bn2 * bt2;
+    FR[3] = ro_R * u2 * w2 - bn2 * bm2;
+    FR[4] = (e2 + pTR) * u2 - bn2 * (u2 * bn2 + v2 * bt2 + w2 * bm2);
+    FR[5] = 0.0;
+    FR[6] = u2 * bt2 - v2 * bn2;
+    FR[7] = u2 * bm2 - w2 * bn2;
+
+    UL[0] = ro_L;
+    UL[1] = ro_L * u1;
+    UL[2] = ro_L * v1;
+    UL[3] = ro_L * w1;
+    UL[4] = e1;
+    UL[5] = bn1;
+    UL[6] = bt1;
+    UL[7] = bm1;
+
+    UR[0] = ro_R;
+    UR[1] = ro_R * u2;
+    UR[2] = ro_R * v2;
+    UR[3] = ro_R * w2;
+    UR[4] = e2;
+    UR[5] = bn2;
+    UR[6] = bt2;
+    UR[7] = bm2;
+
+    double bn = (SR * UR[5] - SL * UL[5] + FL[5] - FR[5]) / (SR - SL);
+    double bt = (SR * UR[6] - SL * UL[6] + FL[6] - FR[6]) / (SR - SL);
+    double bm = (SR * UR[7] - SL * UL[7] + FL[7] - FR[7]) / (SR - SL);
+    double bbn = bn * bn;
+
+    double ro_LL = ro_L * (SL - u1) / (SL - SM);
+    double ro_RR = ro_R * (SR - u2) / (SR - SM);
+
+    if (metod <= 1)   // HLL
+    {
+        double dq[8];
+        for (int ik = 0; ik < 8; ik++)
+        {
+            dq[ik] = UR[ik] - UL[ik];
+        }
+
+        double TL = SL;
+        double TR = SR;
+        if (SL > 0.0)
+        {
+            TL = 0.0;
+        }
+        if (SR < 0.0)
+        {
+            TR = 0.0;
+        }
+
+        double a = TR * TL;
+        double b = TR - TL;
+
+        double PO[9];
+        for (int i = 0; i < 8; i++)
+        {
+            PO[i] = (TR * FL[i] - TL * FR[i] + a * dq[i]) / b;
+        }
+
+
+        PO[5] = 0.5 * (psi_L + psi_R) - 0.5 * ch * (bn2 - bn1);
+        PO[8] = 0.5 * ch * ch * (bn2 + bn1) - 0.5 * ch * (psi_R - psi_L);
+
+        P[1] = n1 * PO[1] + t1 * PO[2] + m1 * PO[3];
+        P[2] = n2 * PO[1] + t2 * PO[2] + m2 * PO[3];
+        P[3] = n3 * PO[1] + t3 * PO[2] + m3 * PO[3];
+        P[5] = spi4 * (n1 * PO[5] + t1 * PO[6] + m1 * PO[7]);
+        P[6] = spi4 * (n2 * PO[5] + t2 * PO[6] + m2 * PO[7]);
+        P[7] = spi4 * (n3 * PO[5] + t3 * PO[6] + m3 * PO[7]);
+        P[0] = PO[0];
+        P[4] = PO[4];
+        PQ = PO[8];
+
+        double SWAP = P[4];
+        P[4] = P[5];
+        P[5] = P[6];
+        P[6] = P[7];
+        P[7] = SWAP;
+        return time;
+
+    }
+    else
+    {
+        printf("ERROR Q!!!! fsfwsefcwefdwdeedw\n");
+    }
+
+}
+
+
 
 __device__ double HLLDQ_Korolkov2(const double& ro_L, const double& Q_L, const double& p_L, const double& v1_L, const double& v2_L, const double& v3_L,//
     const double& Bx_L, const double& By_L, const double& Bz_L, const double& ro_R, const double& Q_R, const double& p_R, const double& v1_R, const double& v2_R, const double& v3_R,//
