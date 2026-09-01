@@ -147,7 +147,7 @@
 #define Nmin 3              // Каждую какую точку выводим?
 #define THREADS_PER_BLOCK 256    // Количество нитей в одном потоке // Необходимо, чтобы количество ячеек в сетке делилось на число нитей (лучше N делилось на число нитей)
 
-__device__ int sign(double& x);
+__host__ __device__ int sign(double& x);
 __device__ double minmod(double x, double y);
 __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y);
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
@@ -166,7 +166,7 @@ __host__ bool areaa(double x, double y, double ro, double p, double u, double v)
 
 using namespace std;
 
-__device__ double minmod(double x, double y)
+__host__ __device__ double minmod(double x, double y)
 {
     if (sign(x) + sign(y) == 0)
     {
@@ -184,7 +184,7 @@ __device__ double VanLier(double x, double y)
     return minmod((x + y)/2.0, 2.0 * minmod(x, y));
 }
 
-__device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
+__host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
 {
     double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
     return  (d * (y - x2) + t2);
@@ -2151,7 +2151,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     dr4 = r - r4;
 
 
-    double ch_now = *ch;
+    double ch_now = 2.0 * *ch;
     double ch_max = 0.0;
     
 
@@ -2707,7 +2707,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     //Pdiv = Pdiv + dV * b_1.x / x;
 
     Pdiv = Pdiv + dV * bx / x;
-    // Pdiv = 0.0;
+    //Pdiv = 0.0;
 
 
     s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
@@ -2763,8 +2763,14 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     s2[index].y = const_p * s2[index].x;
     //s2[index].y = s2[index].x;
 
-    double tau = 0.18 * min(DPHI(m) * r, DR(n)) / ch_now;
+    double tau = 0.18 * min(DPHI(m) * r, DR(n)) / ch_now;  // 0.18     18 - норм
     //double tau = 0.18/ ch_now;
+
+    if (tau < 2.0 * *T_do)  tau = 2.0 * *T_do;
+    if (tau > 100.0 * *T_do) tau = 100.0 * *T_do;
+
+    //tau = 4.0 * *T_do;
+
     s2[index].z = (s_1.z - *T_do * PS.z / dV - *T_do * ch_now * ch_now * bx / x) * exp(-*T_do / tau);
 
 
@@ -2979,9 +2985,9 @@ int main(void)
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
-    string name1 = "save_zOph_6(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_7(350x256).bin";   // Куда сохраняем
-    int all_step = 24000 * 60 * 1; // 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем
+    int all_step = 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3127,10 +3133,12 @@ int main(void)
         }
     }
 
-
-    for (int k = 0; k < K; k++) 
+    if (false)
     {
-        host_s2[k].z = host_s[k].z = 0.0;
+        for (int k = 0; k < K; k++)
+        {
+            host_s2[k].z = host_s[k].z = 0.0;
+        }
     }
     cout << "Initial conditions: end" << endl;
 
@@ -3337,6 +3345,181 @@ int main(void)
 
             fout5.close();
         }
+
+        // Считаем div B
+        if (true)
+        {
+            if ((i % (30000) == 0))
+            {
+                
+                cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
+                cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
+                cudaMemcpy(host_b, b, size2, cudaMemcpyDeviceToHost);
+                cudaMemcpy(host_TT, TT, sizeof(double), cudaMemcpyDeviceToHost);
+
+                double divB_max = 0.0;
+                double dibB_sum = 0.0;
+                double V_sum = 0.0;
+                int i_max = 0;
+                int j_max = 0;
+                double xx = 0.0;
+                double yy = 0.0;
+
+                for (int k = 0; k < K; k++)
+                {
+                    int i = k % N;                                   // номер ячейки по x (от 0)
+                    int j = (k - i) / N;                             // номер ячейки по y (от 0)
+                    int n = i;
+                    int m = j;
+                    if (i == 0 || i == N - 1 || j == 0 || j == M - 1)
+                    {
+                        continue;
+                    }
+
+                    double r, phi;
+                    phi = PHI_CENTER(j);
+                    r = R_CENTER(i, j);
+                    double x, y;
+                    x = r * cos(phi);
+                    y = r * sin(phi);
+
+                    double bx = host_b[k].x + Bx_dipole(r, phi);
+                    double by = host_b[k].y + By_dipole(r, phi);
+
+                    double3 b_1 = { bx, by, 0.0 };
+
+                    double3 b_5 = host_b[(m + 1) * N + n];
+                    double r5 = R_CENTER(n, m + 1);
+                    double phi5 = PHI_CENTER(m + 1);
+
+                    double3 b_2 = host_b[(m)*N + n + 1];
+                    double r2 = R_CENTER(n + 1, m);
+                    double phi2 = phi;
+
+                    double3 b_4 = host_b[(m)*N + n - 1];
+                    double r4 = R_CENTER(n - 1, m);
+                    double phi4 = phi;
+
+
+                    double3 b_3 = host_b[(m - 1) * N + (n)];
+                    double r3 = R_CENTER(n, m - 1);
+                    double phi3 = PHI_CENTER(m - 1);
+
+                    double Pdiv = 0.0;
+                    double r_g, phi_g, n1, n2, bx_L, by_L, bx_R, by_R, Bx_dipole_, By_dipole_, x_g, y_g;
+
+                    if (true)
+                    {
+                        // r+ грань
+                        if (true)
+                        {
+                            n1 = x / r;
+                            n2 = y / r;
+                            r_g = R_EDGE(n + 1);
+                            phi_g = phi;
+
+                            bx_L = b_1.x;
+                            by_L = b_1.y;
+
+                            bx_R = b_2.x;
+                            by_R = b_2.y;
+
+                            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+                            By_dipole_ = By_dipole(r_g, phi_g);
+
+                            Pdiv = Pdiv + DPHI(m) * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+                        }
+
+                        // phi- грань
+                        if (true)
+                        {
+                            r_g = r;
+                            phi_g = PHI_LEFT(m);
+                            x_g = r_g * cos(phi_g);
+                            y_g = r_g * sin(phi_g);
+                            n1 = y_g / r_g;
+                            n2 = -x_g / r_g;
+
+
+                            bx_L = b_1.x;
+                            by_L = b_1.y;
+
+                            bx_R = b_3.x;
+                            by_R = b_3.y;
+
+
+                            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+                            By_dipole_ = By_dipole(r_g, phi_g);
+
+                            Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+                        }
+
+                        // r- грань
+                        if (true)
+                        {
+                            n1 = -x / r;
+                            n2 = -y / r;
+                            r_g = R_EDGE(n);
+                            phi_g = phi;
+
+
+                            bx_L = b_1.x;
+                            by_L = b_1.y;
+
+                            bx_R = b_4.x;
+                            by_R = b_4.y;
+
+                            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+                            By_dipole_ = By_dipole(r_g, phi_g);
+
+                            Pdiv = Pdiv + DPHI(m) * r_g * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+                        }
+
+                        // phi+ грань
+                        if (true)
+                        {
+                            r_g = r;
+                            phi_g = PHI_RIGHT(m);
+                            x_g = r_g * cos(phi_g);
+                            y_g = r_g * sin(phi_g);
+                            n1 = -y_g / r_g;
+                            n2 = x_g / r_g;
+
+
+                            bx_L = b_1.x;
+                            by_L = b_1.y;
+
+                            bx_R = b_5.x;
+                            by_R = b_5.y;
+
+                            Bx_dipole_ = Bx_dipole(r_g, phi_g);
+                            By_dipole_ = By_dipole(r_g, phi_g);
+
+                            Pdiv = Pdiv + DR(n) * (n1 * (bx_L + bx_R + 2.0 * Bx_dipole_) / 2.0 + n2 * (by_L + by_R + 2.0 * By_dipole_) / 2.0);
+                        }
+
+                    }
+
+                    double dV = CELL_AREA(n, m);
+                    Pdiv = fabs((Pdiv + dV * bx / x));
+                    dibB_sum += Pdiv;
+                    V_sum += dV;
+
+                    if (divB_max < Pdiv / dV)
+                    {
+                        divB_max = Pdiv / dV;
+                        i_max = i;
+                        j_max = j;
+                        xx = x;
+                        yy = y;
+                    }
+                    
+                }
+
+                cout << "Max divB = " << divB_max << "  in: " << i_max << " " << j_max << "   x = " << xx << "   y = " << yy << endl;
+                cout << "Sum div = " << dibB_sum / V_sum << endl;
+            }
+        }
     }
 
 
@@ -3394,6 +3577,7 @@ int main(void)
     {
         bfout.write((char*)&host_s[k].x, sizeof(host_s[k].x));
         bfout.write((char*)&host_s[k].y, sizeof(host_s[k].y));
+        bfout.write((char*)&host_s[k].z, sizeof(host_s[k].y));
         bfout.write((char*)&host_u[k].x, sizeof(host_u[k].x));
         bfout.write((char*)&host_u[k].y, sizeof(host_u[k].y));
         bfout.write((char*)&host_u[k].z, sizeof(host_u[k].z));
