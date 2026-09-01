@@ -46,3 +46,11 @@ Data (Inner wind)/param_for_texplot_1d_phi.txt
 Data (Inner wind)/param_for_texplot_1d_r-1.txt
 
 Data (Inner wind)/param_for_texplot_1d_phi-1.txt
+
+Data (Inner wind)/
+
+*.db-wal
+
+*.db-shm
+
+*.opendb

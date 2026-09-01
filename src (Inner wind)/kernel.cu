@@ -118,7 +118,7 @@
 #define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.266667)   //   Скорость вращения звезды
+#define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -3980,9 +3980,10 @@ int main(void)
     // "save_zOph_2(350x256).bin" - 7 часов с магнитным полем без вращения
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
-    string name1 = "save_zOph_3(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_3(350x256).bin";   // Куда сохраняем
-    int all_step = 24000 * 60 * 10; // 50000 * 6 * 2;// 1 * 1;  // 294
+    // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
+    string name1 = "save_zOph_2(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_5(350x256).bin";   // Куда сохраняем
+    int all_step = 24000 * 60 * 2; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double2* host_s;
@@ -4200,14 +4201,10 @@ int main(void)
     // NO TVD
     for (int i = 0; i < all_step; i = i + 2)  // Сколько шагов по времени делаем?
     {
-        if (i % 1000 == 0)
+        if (i % 50000 == 0)
         {
             cout << "Metod  " << meth << "   " << i <<  endl;
         }
-        /*if (i > 100000)
-        {
-            meth = 3;
-        }*/
 
         add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s, u, b, s2, u2, b2, T, T_do, i, meth);
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> >  (s, u, b, s2, u2, b2, T, T_do, i, meth)
@@ -4254,18 +4251,76 @@ int main(void)
             exit(-1);
         }
 
-        if ((i % 50000000 == 0 && i > 2))
+        if ((i % (24000 * 30) == 0))
         {
-            cudaEventRecord(stop, 0);
-            cudaEventSynchronize(stop);
-            cudaEventElapsedTime(&elapsedTime, start, stop);
-            printf("2000 step - Time:  %.2f sec\n", elapsedTime / 1000.0);
-            cudaEventRecord(start, 0);
             cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
-            cudaMemcpy(host_u, u, size, cudaMemcpyDeviceToHost);
+            cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
             cudaMemcpy(host_b, b, size2, cudaMemcpyDeviceToHost);
-            string name = "02_12_" + to_string(i) + ".txt";
-            //print_file_mini2(host_s, host_u, host_b, name);
+
+            ofstream fout5;
+            fout5.open(to_string(i) + "_param_for_texplot_all.txt");
+
+
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\", N = " << K //
+                << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
+
+            cout << "TT = " << *host_TT << endl;
+
+            for (int k = 0; k < K; k++)
+            {
+                int i = k % N;                                   // номер ячейки по x (от 0)
+                int j = (k - i) / N;                             // номер ячейки по y (от 0)
+                double r, phi;
+                phi = PHI_CENTER(j);
+                r = R_CENTER(i, j);
+                //r = R_CENTER(i);
+
+                double x, y;
+                x = r * cos(phi);
+                y = r * sin(phi);
+
+                double bx = host_b[k].x + Bx_dipole(r, phi);
+                double by = host_b[k].y + By_dipole(r, phi);
+
+
+                double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
+                if (host_s[k].x > 0.0)
+                {
+                    Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
+                    Temp = host_s[k].y / host_s[k].x;
+                    if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
+                    {
+                        Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
+                            sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
+                    }
+                }
+
+                //Max_alf = 0.0;
+
+                double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
+                double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
+                double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+                double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+                fout5 << x << " " << y << " " << host_s[k].x << " " << host_s[k].y <<//
+                    " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
+                    " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+                    Max << " " << Max_alf << " " << Temp << endl;
+            }
+
+            for (int i = 0; i < N - 1; i++)
+            {
+                for (int j = 0; j < M - 1; j++)
+                {
+                    int k1 = j * N + i;
+                    int k2 = j * N + i + 1;
+                    int k3 = (j + 1) * N + i + 1;
+                    int k4 = (j + 1) * N + i;
+                    fout5 << k1 + 1 << " " << k2 + 1 << " " << k3 + 1 << " " << k4 + 1 << endl;
+                }
+            }
+
+            fout5.close();
         }
     }
 
