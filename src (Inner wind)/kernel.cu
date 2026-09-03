@@ -18,6 +18,8 @@
 #define dphi (pi/M)           
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
+#define print_i (3)           // предполагаем, что M чётное
+#define print_j (3)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -115,8 +117,8 @@
 
 #define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define Bo_init 0.0 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init (pi/2.0) // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
 
@@ -2280,6 +2282,12 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
                 printf("Problems P... = %lf, %lf, %lf, %lf, %lf, %lf, %lf, %d, %d \n", P[4], r_g, r2, P[0], P[7], rho_L, rho_R, n, m);
             }
 
+            if (n == print_i && m == print_j)
+            {
+                printf("Potok r+: %E \n", P[1]);
+            }
+
+
             PS.x = PS.x + P[0] * DPHI(m) * r_g;
             PS.y = PS.y + P[7] * DPHI(m) * r_g;
             PS.z = PS.z + PQ   * DPHI(m) * r_g;
@@ -2381,6 +2389,11 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, ch_now, ch_max_, x, y));
             ch_max = max(ch_max, ch_max_);
 
+            if (n == print_i && m == print_j)
+            {
+                printf("Potok phi-: %E \n", P[1]);
+            }
+
             PS.x = PS.x + P[0] * DR(n);
             PS.y = PS.y + P[7] * DR(n);
             PS.z = PS.z + PQ * DR(n);
@@ -2479,6 +2492,12 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, ch_now, ch_max_, x, y));
             ch_max = max(ch_max, ch_max_);
+
+            if (n == print_i && m == print_j)
+            {
+                printf("Potok r+: %E \n", P[1]);
+            }
+
 
             PS.x = PS.x + P[0] * DPHI(m) * r_g;
             PS.y = PS.y + P[7] * DPHI(m) * r_g;
@@ -2579,6 +2598,16 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, ch_now, ch_max_, x, y));
             ch_max = max(ch_max, ch_max_);
+
+            if (i == 3 && j == 3)
+            {
+                printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
+            }
+
+            if (n == print_i && m == print_j)
+            {
+                printf("Potok phi+: %E \n", P[1]);
+            }
 
             PS.x = PS.x + P[0] * DR(n);
             PS.y = PS.y + P[7] * DR(n);
@@ -2987,7 +3016,7 @@ int main(void)
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем
     string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем
-    int all_step = 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    int all_step = 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3058,7 +3087,7 @@ int main(void)
     *host_ch_posle = 0.0;
     
     // Считываем начальное с файла.
-    if (true)
+    if (false)
     {
 
         ifstream bfin(name1, ios::binary);
@@ -3085,7 +3114,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (false)
+    if (true)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3255,13 +3284,13 @@ int main(void)
 
 
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth)
-        add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, ch, ch_posle, i, meth);
+        //add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, ch, ch_posle, i, meth);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) { fprintf(stderr, "3  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));   exit(-1); }
         cudaStatus = cudaDeviceSynchronize();
         if (cudaStatus != cudaSuccess) { fprintf(stderr, "3  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus); exit(-1); }
 
-        funk_time << <1, 1 >> > (T, T_do, TT, dev_i, ch, ch_posle);
+        //funk_time << <1, 1 >> > (T, T_do, TT, dev_i, ch, ch_posle);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
             fprintf(stderr, "4  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));

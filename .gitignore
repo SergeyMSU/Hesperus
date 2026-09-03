@@ -56,3 +56,9 @@ Data (Inner wind)/
 *.opendb
 
 Hesperus-inner-wind-CT/.vs/Hesperus-inner-wind-CT/v17/.suo
+
+*.recipe
+
+*.log
+
+*.lastbuildstate
