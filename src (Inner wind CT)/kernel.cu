@@ -1376,15 +1376,17 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 }
 
 
-__device__ double get_cell(
-    const double* field, int N_, int M_,
-    int i, int j
-) {
+__device__ double get_cell(const double* field, int N_, int M_, int i, int j) 
+{
     // Ёкстрапол€ци€: clamp к допустимым индексам
-    if (i < 0) i = 0;
-    if (i >= N_) i = N_ - 1;
-    if (j < 0) j = 0;
-    if (j >= M_) j = M_ - 1;
+    if (i == -1) i = 0;
+    if (i == -2) i = 1;
+    if (i == N_) i = N_ - 1;
+    if (i == N_ + 1) i = N_ - 2;
+    if (j == -1) j = 0;
+    if (j == -2) j = 1;
+    if (j == M_) j = M_ - 1;
+    if (j == M_ + 1) j = M_ - 2;
     return field[i * M_ + j];
 }
 
@@ -1453,28 +1455,315 @@ __global__ void compute_fluxes(
     // —читаем потоки
     if (true)
     {
-        double rho_L, tho_R;
-        // 1. ¬ерхн€€ горизонтальна€ грань (i, j+1) Ч если j < M
-        if (j <= M - 3 && j >= 1)
+        double tmin = 1.0E30;
+        double rho_L, rho_R, Vx_L, Vx_R, Vy_L, Vy_R, Vz_L, Vz_R;
+        double Bx_L, Bx_R, By_L, By_R, Bz_L, Bz_R;
+        double r = R_CENTER(i, j);
+        
+        // 1. ¬ерхн€€ горизонтальна€ грань (она заполн€етс€ дл€ всех €чеек)
+        if (true)
         {
-            double r = R_CENTER(i, j);
-            double phi1 = PHI_CENTER(j);
-            double phi2 = PHI_CENTER(j + 1);
-            double phi3 = PHI_CENTER(j - 1);
-            double phi4 = PHI_CENTER(j + 2);
+            double phi_g = PHI_RIGHT(j);
 
-            // Ќужны €чейки (i, j-1), (i, j), (i, j+1), (i, j+2)
-            // в shared: (i_l, j_l-2), (i_l, j_l-1), (i_l, j_l), (i_l, j_l+1)
-            double rho_L2 = sh_rho[i_l][j_l - 2];
-            double rho_L1 = sh_rho[i_l][j_l - 1];
-            double rho_R0 = sh_rho[i_l][j_l];
-            double rho_R1 = sh_rho[i_l][j_l + 1];
-            // јналогично дл€ Vx, Vy, Vz, Bx, By, Bz
-            // ... вызов функции compute_flux(...) ...
-            int idx_h = i * (M + 1) + (j + 1);
-            h_Prho[idx_h] = /* результат */;
-            h_Pvx[idx_h] = /* ... */;
-            // ... остальные 6 переменных
+            if (true)
+            {
+                double phi1 = PHI_CENTER(j);
+                double phi2, phi4;
+                double phi3;
+
+                if (j == 0)
+                {
+                    phi3 = -pi - phi1; // —имметрична€ €чейка относительно оси
+                }
+                else
+                {
+                    phi3 = PHI_CENTER(j - 1);
+                }
+
+                if (j == M - 1)
+                {
+                    phi2 = pi - phi1;
+                    phi4 = pi - phi3;
+                }
+                else if (j == M - 2)
+                {
+                    phi2 = PHI_CENTER(j + 1);
+                    phi4 = pi - phi2;
+                }
+                else
+                {
+                    phi2 = PHI_CENTER(j + 1);
+                    phi4 = PHI_CENTER(j + 2);
+                }
+
+                // —тавим симметрию на оси
+                if (j == 0)
+                {
+                    sh_Vz[i_l][j_l - 1] = -sh_Vz[i_l][j_l];
+                    sh_Vx[i_l][j_l - 1] = -sh_Vx[i_l][j_l];
+                    sh_Bx[i_l][j_l - 1] = -sh_Bx[i_l][j_l];
+                    sh_Bz[i_l][j_l - 1] = -sh_Bz[i_l][j_l];
+
+                    sh_Vz[i_l][j_l - 2] = -sh_Vz[i_l][j_l + 1];
+                    sh_Vx[i_l][j_l - 2] = -sh_Vx[i_l][j_l + 1];
+                    sh_Bx[i_l][j_l - 2] = -sh_Bx[i_l][j_l + 1];
+                    sh_Bz[i_l][j_l - 2] = -sh_Bz[i_l][j_l + 1];
+
+                    sh_Vy[i_l][j_l - 2] = sh_Vy[i_l][j_l + 1];
+                    sh_By[i_l][j_l - 2] = sh_By[i_l][j_l + 1];
+                    sh_rho[i_l][j_l - 2] = sh_rho[i_l][j_l + 1];
+                }
+
+                if (j == M - 1)
+                {
+                    sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
+                    sh_Vx[i_l][j_l + 1] = -sh_Vx[i_l][j_l];
+                    sh_Bx[i_l][j_l + 1] = -sh_Bx[i_l][j_l];
+                    sh_Bz[i_l][j_l + 1] = -sh_Bz[i_l][j_l];
+
+                    sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l - 1];
+                    sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l - 1];
+                    sh_Bx[i_l][j_l + 2] = -sh_Bx[i_l][j_l - 1];
+                    sh_Bz[i_l][j_l + 2] = -sh_Bz[i_l][j_l - 1];
+                    sh_Vy[i_l][j_l + 2] = sh_Vy[i_l][j_l - 1];
+                    sh_By[i_l][j_l + 2] = sh_By[i_l][j_l - 1];
+                    sh_rho[i_l][j_l + 2] = sh_rho[i_l][j_l - 1];
+                }
+                else if (j == M - 2)
+                {
+                    sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l + 1];
+                    sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l + 1];
+                    sh_Bx[i_l][j_l + 2] = -sh_Bx[i_l][j_l + 1];
+                    sh_Bz[i_l][j_l + 2] = -sh_Bz[i_l][j_l + 1];
+                }
+
+                rho_L = linear(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
+                if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
+                rho_R = linear(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
+                if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
+
+                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
+                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
+
+                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 1], phi1, sh_Bz[i_l][j_l], phi2, sh_Bz[i_l][j_l + 1], phi_g);
+                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 2], phi2, sh_Bz[i_l][j_l + 1], phi1, sh_Bz[i_l][j_l], phi_g);
+
+                // —корости Vx, Vy
+                if (true)
+                {
+                    double Vr_L, Vphi_L, Vr_R, Vphi_R;
+
+                    // Vr
+                    if (true)
+                    {
+                        double Vr1 = sh_Vx[i_l][j_l] * cos(phi1) + sh_Vy[i_l][j_l] * sin(phi1);
+                        double Vr2 = sh_Vx[i_l][j_l + 1] * cos(phi2) + sh_Vy[i_l][j_l + 1] * sin(phi2);
+                        double Vr3 = sh_Vx[i_l][j_l - 1] * cos(phi3) + sh_Vy[i_l][j_l - 1] * sin(phi3);
+                        double Vr4 = sh_Vx[i_l][j_l + 2] * cos(phi4) + sh_Vy[i_l][j_l + 2] * sin(phi4);
+
+                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                    }
+
+                    // Vphi
+                    if (true)
+                    {
+                        double Vphi1 = -sh_Vx[i_l][j_l] * sin(phi1) + sh_Vy[i_l][j_l] * cos(phi1);
+                        double Vphi2 = -sh_Vx[i_l][j_l + 1] * sin(phi2) + sh_Vy[i_l][j_l + 1] * cos(phi2);
+                        double Vphi3 = -sh_Vx[i_l][j_l - 1] * sin(phi3) + sh_Vy[i_l][j_l - 1] * cos(phi3);
+                        double Vphi4 = -sh_Vx[i_l][j_l + 2] * sin(phi4) + sh_Vy[i_l][j_l + 2] * cos(phi4);
+
+                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                    }
+
+                    Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+                    Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                }
+
+                // ћагнитные пол€ Bx, By
+                if (true)
+                {
+                    double Br_L, Bphi_L, Br_R, Bphi_R;
+
+                    // Br
+                    if (true)
+                    {
+                        double Br1 = sh_Bx[i_l][j_l] * cos(phi1) + sh_By[i_l][j_l] * sin(phi1);
+                        double Br2 = sh_Bx[i_l][j_l + 1] * cos(phi2) + sh_By[i_l][j_l + 1] * sin(phi2);
+                        double Br3 = sh_Bx[i_l][j_l - 1] * cos(phi3) + sh_By[i_l][j_l - 1] * sin(phi3);
+                        double Br4 = sh_Bx[i_l][j_l + 2] * cos(phi4) + sh_By[i_l][j_l + 2] * sin(phi4);
+
+                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                    }
+
+                    // Bphi
+                    if (true)
+                    {
+                        double Bphi1 = -sh_Bx[i_l][j_l] * sin(phi1) + sh_By[i_l][j_l] * cos(phi1);
+                        double Bphi2 = -sh_Bx[i_l][j_l + 1] * sin(phi2) + sh_By[i_l][j_l + 1] * cos(phi2);
+                        double Bphi3 = -sh_Bx[i_l][j_l - 1] * sin(phi3) + sh_By[i_l][j_l - 1] * cos(phi3);
+                        double Bphi4 = -sh_Bx[i_l][j_l + 2] * sin(phi4) + sh_By[i_l][j_l + 2] * cos(phi4);
+
+                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                    }
+
+                    Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+                    By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                }
+            }
+
+            // —читаем поток
+            if (true)
+            {
+                // Ќадо будет ещЄ подпроавить Bn в €чейке
+                double PQ = 0.0;
+                double P[8];
+                P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, 0.0, 0.0, 0.0,
+                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, DPHI(j) * r, 1));
+
+                int idx_h = i * (M + 1) + (j + 1);
+                h_Prho[idx_h] = P[0];
+                h_Pvx[idx_h] = P[1];
+                h_Pvy[idx_h] = P[2];
+                h_Pvz[idx_h] = P[3];
+                h_Pbx[idx_h] = P[4];
+                h_Pby[idx_h] = P[5];
+                h_Pbz[idx_h] = P[6];
+            }
+        }
+
+        // 2. Ќижн€€ горизонтальна€ грань (она есть только у нижнего р€да €чеек)
+        if (j == 0)
+        {
+            // «начени€ в фиктивных €чейках были заполнены в 1.
+            double phi_g = -pi / 2.0;
+
+            if (true)
+            {
+                double phi1, phi2, phi3, phi4;
+
+                phi2 = PHI_CENTER(j);
+                phi4 = PHI_CENTER(j + 1);
+                phi1 = -pi - phi2;
+                phi3 = -pi - phi4;
+
+                rho_L = linear(phi3, sh_rho[i_l][j_l - 2], phi1, sh_rho[i_l][j_l - 1], phi2, sh_rho[i_l][j_l], phi_g);
+                if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
+                rho_R = linear(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
+                if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
+
+                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
+                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
+
+                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 2], phi1, sh_Bz[i_l][j_l - 1], phi2, sh_Bz[i_l][j_l], phi_g);
+                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 1], phi2, sh_Bz[i_l][j_l], phi1, sh_Bz[i_l][j_l - 1], phi_g);
+
+                // —корости Vx, Vy
+                if (true)
+                {
+                    double Vr_L, Vphi_L, Vr_R, Vphi_R;
+
+                    // Vr
+                    if (true)
+                    {
+                        double Vr1 = sh_Vx[i_l][j_l - 1] * cos(phi1) + sh_Vy[i_l][j_l - 1] * sin(phi1);
+                        double Vr2 = sh_Vx[i_l][j_l] * cos(phi2) + sh_Vy[i_l][j_l] * sin(phi2);
+                        double Vr3 = sh_Vx[i_l][j_l - 2] * cos(phi3) + sh_Vy[i_l][j_l - 2] * sin(phi3);
+                        double Vr4 = sh_Vx[i_l][j_l + 1] * cos(phi4) + sh_Vy[i_l][j_l + 1] * sin(phi4);
+
+                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                    }
+
+                    // Vphi
+                    if (true)
+                    {
+                        double Vphi1 = -sh_Vx[i_l][j_l - 1] * sin(phi1) + sh_Vy[i_l][j_l - 1] * cos(phi1);
+                        double Vphi2 = -sh_Vx[i_l][j_l] * sin(phi2) + sh_Vy[i_l][j_l] * cos(phi2);
+                        double Vphi3 = -sh_Vx[i_l][j_l - 2] * sin(phi3) + sh_Vy[i_l][j_l - 2] * cos(phi3);
+                        double Vphi4 = -sh_Vx[i_l][j_l + 1] * sin(phi4) + sh_Vy[i_l][j_l + 1] * cos(phi4);
+
+                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                    }
+
+                    Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+                    Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                }
+
+                // ћагнитные пол€ Bx, By
+                if (true)
+                {
+                    double Br_L, Bphi_L, Br_R, Bphi_R;
+
+                    // Br
+                    if (true)
+                    {
+                        double Br1 = sh_Bx[i_l][j_l - 1] * cos(phi1) + sh_By[i_l][j_l - 1] * sin(phi1);
+                        double Br2 = sh_Bx[i_l][j_l] * cos(phi2) + sh_By[i_l][j_l] * sin(phi2);
+                        double Br3 = sh_Bx[i_l][j_l - 2] * cos(phi3) + sh_By[i_l][j_l - 2] * sin(phi3);
+                        double Br4 = sh_Bx[i_l][j_l + 1] * cos(phi4) + sh_By[i_l][j_l + 1] * sin(phi4);
+
+                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                    }
+
+                    // Bphi
+                    if (true)
+                    {
+                        double Bphi1 = -sh_Bx[i_l][j_l - 1] * sin(phi1) + sh_By[i_l][j_l - 1] * cos(phi1);
+                        double Bphi2 = -sh_Bx[i_l][j_l] * sin(phi2) + sh_By[i_l][j_l] * cos(phi2);
+                        double Bphi3 = -sh_Bx[i_l][j_l - 2] * sin(phi3) + sh_By[i_l][j_l - 2] * cos(phi3);
+                        double Bphi4 = -sh_Bx[i_l][j_l + 1] * sin(phi4) + sh_By[i_l][j_l + 1] * cos(phi4);
+
+                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                    }
+
+                    Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+                    By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                }
+            }
+
+            // —читаем поток
+            if (true)
+            {
+                // Ќадо будет ещЄ подпроавить Bn в €чейке
+                double PQ = 0.0;
+                double P[8];
+                P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
+
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, 0.0, 0.0, 0.0,
+                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, DPHI(j) * r, 1));
+
+                int idx_h = i * (M + 1) + (j);
+                h_Prho[idx_h] = P[0];
+                h_Pvx[idx_h] = P[1];
+                h_Pvy[idx_h] = P[2];
+                h_Pvz[idx_h] = P[3];
+                h_Pbx[idx_h] = P[4];
+                h_Pby[idx_h] = P[5];
+                h_Pbz[idx_h] = P[6];
+            }
         }
     }
 
