@@ -23,6 +23,8 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
+#define print_i (0)           // предполагаем, что M чётное
+#define print_j (10000000)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -112,7 +114,7 @@
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.45 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
+#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
 #define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
@@ -468,9 +470,6 @@ __global__ void compute_fluxes(
     sh_dt_min[tx + ty * BX] = 1.0E30;
     __syncthreads();
 
-
-    if (i >= N || j >= M) return;
-
     // Локальные координаты в shared (с учётом запаса)
     // это координаты текущей ячейки в shared памяти (это важно, так как через них можно брать координаты соседей и т.д.)
     int i_l = tx + HALO;
@@ -478,8 +477,9 @@ __global__ void compute_fluxes(
 
     double tmin = 1.0E30;
 
+
     // Считаем потоки
-    if (true)
+    if (i < N && j < M)
     {
         double rho_L, rho_R, Vx_L, Vx_R, Vy_L, Vy_R, Vz_L, Vz_R;
         double Bx_L, Bx_R, By_L, By_R, Bz_L, Bz_R;
@@ -663,10 +663,10 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, -sin(phi_g), cos(phi_g), 0.0, DPHI(j) * r, 1));
 
-                if (i == 3 && j == 3)
+                /*if (i == 3 && j == 3)
                 {
                     printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
-                }
+                }*/
 
                 int idx_h = (j + 1) * N + i;
                 h_Prho[idx_h] = P[0];
@@ -884,7 +884,8 @@ __global__ void compute_fluxes(
                             double h1 = r - r3;
                             double h2 = r2 - r;
                             double dVr_;
-                            dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));
+                            //dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
+                            dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
                             dVr[j * N + i] = dVr_;
 
 
@@ -965,10 +966,11 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
 
-                //if (i == 3 && j == 3)
-                //{
-                //    printf("%E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
-                //}
+                if (i == print_i && j == print_j)
+                {
+                    printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
+                    printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
+                }
 
                 int idx_h = j * (N + 1) + (i + 1);
                 v_Prho[idx_h] = P[0];
@@ -985,7 +987,7 @@ __global__ void compute_fluxes(
         if (i == 0)
         {
             double phi_g = PHI_CENTER(j);
-            double r_g = R_EDGE(i);
+            double r_g = 1.0;
 
             // Сносим переменные на грани minmod
             if (true)
@@ -1159,8 +1161,10 @@ __global__ void update_cells(
 
     double Fx = 0.0, Fy = 0.0;
 
+    double dTime = *dT; // 1.0E-4; // *dT;
+
     // Вычисляем силы
-    if (false)
+    if (true)
     {
         double fr = 0.0;
         fr = (F_grav + F_continuum) * rho_1 / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
@@ -1195,7 +1199,7 @@ __global__ void update_cells(
         Fy = fr * sin(phi);
     }
 
-
+    double ppp = 0.0;
     // Плотность
     if (true)
     {
@@ -1206,29 +1210,33 @@ __global__ void update_cells(
         P += h_Prho[(j + 1) * N + i] * S3;  // phi+
         P -= h_Prho[j * N + i] * S3;      // phi-
 
-        
+        if (i == print_i && j == print_j)
+        {
+            printf("POTOK rho: %E, %E, %E, %E \n ", v_Prho[j * (N + 1) + (i + 1)], -v_Prho[j * (N + 1) + i], h_Prho[(j + 1) * N + i], -h_Prho[j * N + i]);
+        }
 
-
-        rho_2 = rho_1 - *dT * (P / dV + rho_1 * Vx_1 / x);
+        ppp = P;
+        rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
         rho[idx] = rho_2;
     }
 
     // Vx
+    
     if (true)
     {
         double P = 0.0;
 
         P += v_Pvx[j * (N + 1) + (i + 1)] * S1;   // r+
         P -= v_Pvx[j * (N + 1) + i] * S2;       // r-
-        P += v_Pvx[(j + 1) * N + i] * S3;  // phi+
-        P -= v_Pvx[j * N + i] * S3;      // phi-
+        P += h_Pvx[(j + 1) * N + i] * S3;  // phi+
+        P -= h_Pvx[j * N + i] * S3;      // phi-
 
-        if (i == 3 && j == 3)
+        if (i == print_i && j == print_j)
         {
-            printf("POTOK: %E, %E, %E, %E \n ", v_Pvx[j * (N + 1) + (i + 1)], -v_Pvx[j * (N + 1) + i], v_Pvx[(j + 1) * N + i], -v_Pvx[j * N + i]);
+            printf("POTOK vx: %E, %E, %E, %E \n ", v_Pvx[j * (N + 1) + (i + 1)], -v_Pvx[j * (N + 1) + i], h_Pvx[(j + 1) * N + i], -h_Pvx[j * N + i]);
         }
 
-        Vx_2 = (rho_1 * Vx_1 - *dT * P / dV + *dT * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + *dT * Fx) / rho_2;
+        Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx) / rho_2;
         Vx[idx] = Vx_2;
     }
 
@@ -1239,10 +1247,15 @@ __global__ void update_cells(
 
         P += v_Pvy[j * (N + 1) + (i + 1)] * S1;   // r+
         P -= v_Pvy[j * (N + 1) + i] * S2;       // r-
-        P += v_Pvy[(j + 1) * N + i] * S3;  // phi+
-        P -= v_Pvy[j * N + i] * S3;      // phi-
+        P += h_Pvy[(j + 1) * N + i] * S3;  // phi+
+        P -= h_Pvy[j * N + i] * S3;      // phi-
 
-        Vy_2 = (rho_1 * Vy_1 - *dT * P / dV - *dT * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + *dT * Fy) / rho_2;
+        if (i == print_i && j == print_j)
+        {
+            printf("POTOK vy: %E, %E, %E, %E \n ", v_Pvy[j * (N + 1) + (i + 1)], -v_Pvy[j * (N + 1) + i], h_Pvy[(j + 1) * N + i], -h_Pvy[j * N + i]);
+        }
+
+        Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy) / rho_2;
         Vy[idx] = Vy_2;
     }
 
@@ -1253,11 +1266,21 @@ __global__ void update_cells(
 
         P += v_Pvz[j * (N + 1) + (i + 1)] * S1;   // r+
         P -= v_Pvz[j * (N + 1) + i] * S2;       // r-
-        P += v_Pvz[(j + 1) * N + i] * S3;  // phi+
-        P -= v_Pvz[j * N + i] * S3;      // phi-
+        P += h_Pvz[(j + 1) * N + i] * S3;  // phi+
+        P -= h_Pvz[j * N + i] * S3;      // phi-
 
-        Vz_2 = (rho_1 * Vz_1 - *dT * P / dV - 2.0 * *dT * (rho_1 * Vx_1 * Vz_1 - Bx_1 * Bz_1 / cpi4) / x) / rho_2;
+        if (i == print_i && j == print_j)
+        {
+            printf("POTOK vz: %E, %E, %E, %E \n ", v_Pvz[j * (N + 1) + (i + 1)], -v_Pvz[j * (N + 1) + i], h_Pvz[(j + 1) * N + i], -h_Pvz[j * N + i]);
+        }
+
+        Vz_2 = (rho_1 * Vz_1 - dTime * P / dV - 2.0 * dTime * (rho_1 * Vx_1 * Vz_1 - Bx_1 * Bz_1 / cpi4) / x) / rho_2;
         Vz[idx] = Vz_2;
+    }
+
+    if (i == print_i && j == print_j)
+    {
+        printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x));
     }
 }
 
@@ -1319,8 +1342,9 @@ int main(void)
     bool read_setka = false;                     // Нужно ли считывать сетку
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 1; // 24000 * 60 * 9; // Число шагов
+    int all_step = 20000; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
+    double host_all_T = 0.0;
 
     const int cellCount = N * M;
     const int hFaceCount = N * (M + 1);        // горизонтальные грани
@@ -1491,6 +1515,7 @@ int main(void)
 
         cudaError_t err = cudaMemcpy(dT, &host_dT, sizeof(double), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) { printf("error 543thrf3fwrf34r23d324r: %s\n", cudaGetErrorString(err));}
+        cudaStatus = cudaDeviceSynchronize();
 
         dim3 block(BX, BY);
         dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
@@ -1512,21 +1537,19 @@ int main(void)
             exit(-1);
         }
 
-        if (step_ % 1000 == 0)
+        //if (step_ % 1 == 0)
+        if (true)
         {
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
-            cout << "Step = " << step_ << "  dT = " << std::scientific << host_dT * 1.09556 << endl;
-            cudaStatus = cudaGetLastError();
-            if (cudaStatus != cudaSuccess) {
-                fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-                exit(-1);
-            }
-            cudaStatus = cudaDeviceSynchronize();
-            if (cudaStatus != cudaSuccess) {
-                fprintf(stderr, "1  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-                exit(-1);
+            host_all_T += host_dT;
+            if (step_ % 1000 == 0)
+            {
+                cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.09556 
+                    << " hours,  dT =   " << std::scientific << host_dT * 1.09556 << endl;
             }
         }
+
+        cudaStatus = cudaDeviceSynchronize();
 
         update_cells << <grid, block >> > (
             d_cell.rho, d_cell.Vx, d_cell.Vy, d_cell.Vz,
@@ -1642,7 +1665,7 @@ int main(void)
 
         int nn = (int)((N + Nmin - 1) / Nmin);
         int mm = (int)((M + Nmin - 1) / Nmin);
-        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\",  ZONE T = \"HP\", N = " << K //
+        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\", N = " << K //
             << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
         for (int k = 0; k < K; k++)
@@ -1667,9 +1690,15 @@ int main(void)
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
+            double Max = 0.0;
+            if (h_cell.rho[k] > 0.0)
+            {
+                Max = sqrt(( kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+            }
+
             fout5 << x << " " << y << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
         }
 
         for (int i = 0; i < N - 1; i++)
@@ -1692,7 +1721,7 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 1; i++)
         {
@@ -1715,9 +1744,15 @@ int main(void)
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
+            double Max = 0.0;
+            if (h_cell.rho[k] > 0.0)
+            {
+                Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+            }
+
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
         }
 
         fout1dr.close();

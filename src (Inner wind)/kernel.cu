@@ -18,8 +18,8 @@
 #define dphi (pi/M)           
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
-#define print_i (3)           // предполагаем, что M чётное
-#define print_j (3)           // предполагаем, что M чётное
+#define print_i (0)           // предполагаем, что M чётное
+#define print_j (100000000)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -1847,7 +1847,7 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i, double* c
     *T = 10000000;
     *ch_posle = 0.0;
     *i = *i + 1;
-    if (*i % 10000 == 0)
+    if (*i % 1000 == 0)
     {
         printf("i = %d,  TT all = %lf, hours = %lf; dT hours = %E, %E \n", *i, *TT, *TT * 1.09556, *T_do * 1.09556, *ch);
     }
@@ -2284,7 +2284,9 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
             if (n == print_i && m == print_j)
             {
-                printf("Potok r+: %E \n", P[1]);
+                printf("Potok r+: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
+                printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, u_L, v_L, w_L, u_R, v_R, w_R, P[0], P[1], P[2]);
+                printf("and := %E, %E, %E \n", s_1.x, s_2.x, s_21.x);
             }
 
 
@@ -2391,7 +2393,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
             if (n == print_i && m == print_j)
             {
-                printf("Potok phi-: %E \n", P[1]);
+                printf("Potok phi-: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
             }
 
             PS.x = PS.x + P[0] * DR(n);
@@ -2495,7 +2497,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
             if (n == print_i && m == print_j)
             {
-                printf("Potok r+: %E \n", P[1]);
+                printf("Potok r+: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
             }
 
 
@@ -2599,14 +2601,14 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, ch_now, ch_max_, x, y));
             ch_max = max(ch_max, ch_max_);
 
-            if (i == 3 && j == 3)
+            /*if (n == print_i && m == print_j)
             {
-                printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
-            }
+                printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, u_L, v_L, w_L, u_R, v_R, w_R, P[0], P[1], P[2]);
+            }*/
 
             if (n == print_i && m == print_j)
             {
-                printf("Potok phi+: %E \n", P[1]);
+                printf("Potok phi+: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
             }
 
             PS.x = PS.x + P[0] * DR(n);
@@ -2738,6 +2740,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     Pdiv = Pdiv + dV * bx / x;
     //Pdiv = 0.0;
 
+    //*T_do = 1.0E-4;
 
     s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
     //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
@@ -2801,6 +2804,11 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     //tau = 4.0 * *T_do;
 
     s2[index].z = (s_1.z - *T_do * PS.z / dV - *T_do * ch_now * ch_now * bx / x) * exp(-*T_do / tau);
+
+    if (n == print_i && m == print_j)
+    {
+        printf("Cell 0; 100 =: %E, %E, %E, %E, %E, %E, %E \n ", s2[index].x, u2[index].x, u2[index].y, u2[index].z, Fx, Fy, (PS.x / dV + s_1.x * u_1.x / x));
+    }
 
 
     //s2[index].y = 0.000671042 * s2[index].x * sqrt(1.0 / dist);
@@ -3016,7 +3024,7 @@ int main(void)
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем
     string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем
-    int all_step = 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    int all_step = 20000;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3087,7 +3095,7 @@ int main(void)
     *host_ch_posle = 0.0;
     
     // Считываем начальное с файла.
-    if (false)
+    if (true)
     {
 
         ifstream bfin(name1, ios::binary);
@@ -3137,19 +3145,19 @@ int main(void)
             //if (the > pi / 2.0) Br = -Br;
 
 
-            host_s[k] = { rho, const_p * rho, 0.0};
+            //host_s[k] = { rho, const_p * rho, 0.0};
 
             //host_s[k] = {1.0, 0.000223681};
 
-            host_u[k] = { vr * x / dist, vr * y / dist, vphi};
+            //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
             //host_u[k].z = vphi;
             //host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
             // 
             //host_s[k] = { 1.0, 1.0};
             //host_u[k] = { 0.0, 0.0, 0.0 };
 
-            host_s2[k] = host_s[k];
-            host_u2[k] = host_u[k];
+            /*host_s2[k] = host_s[k];
+            host_u2[k] = host_u[k];*/
 
             double Br = B0 * cos(the) * pow(1.0 / dist, 3.0);
             double Bphi = -B0/2.0 * sin(the) * pow(1.0 / dist, 3.0);
@@ -3284,13 +3292,13 @@ int main(void)
 
 
         //Kernel_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, i, meth)
-        //add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, ch, ch_posle, i, meth);
+        add2_TVD << < K / THREADS_PER_BLOCK, THREADS_PER_BLOCK >> > (s2, u2, b2, s, u, b, T, T_do, ch, ch_posle, i, meth);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) { fprintf(stderr, "3  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));   exit(-1); }
         cudaStatus = cudaDeviceSynchronize();
         if (cudaStatus != cudaSuccess) { fprintf(stderr, "3  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus); exit(-1); }
 
-        //funk_time << <1, 1 >> > (T, T_do, TT, dev_i, ch, ch_posle);
+        funk_time << <1, 1 >> > (T, T_do, TT, dev_i, ch, ch_posle);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
             fprintf(stderr, "4  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
