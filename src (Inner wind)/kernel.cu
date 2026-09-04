@@ -18,8 +18,8 @@
 #define dphi (pi/M)           
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
-#define print_i (0)           // предполагаем, что M чётное
-#define print_j (100)           // предполагаем, что M чётное
+#define print_i (348)           // предполагаем, что M чётное
+#define print_j (254)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -2349,8 +2349,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             if (n == print_i && m == print_j)
             {
                 printf("Potok r+: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
-                printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, u_L, v_L, w_L, u_R, v_R, w_R, P[0], P[1], P[2]);
-                printf("and := %E, %E, %E \n", s_1.x, s_2.x, s_21.x);
+                //printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, u_L, v_L, w_L, u_R, v_R, w_R, P[0], P[1], P[2]);
+                //printf("and := %E, %E, %E \n", s_1.x, s_2.x, s_21.x);
             }
 
 
@@ -2559,9 +2559,14 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
                 u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, ch_now, ch_max_, x, y));
             ch_max = max(ch_max, ch_max_);
 
+            //if (n == print_i && m == print_j)
+            //{
+            //    printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, u_L, v_L, w_L, u_R, v_R, w_R, P[0], P[1], P[2]);
+            //    //printf("and := %E, %E, %E \n", s_1.x, s_2.x, s_21.x);
+            //}
             if (n == print_i && m == print_j)
             {
-                printf("Potok r+: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
+                printf("Potok r-: %E, %E, %E, %E \n", P[0], P[1], P[2], P[3]);
             }
 
 
@@ -2871,7 +2876,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
     if (n == print_i && m == print_j)
     {
-        printf("Cell 0; 100 =: %E, %E, %E, %E, %E, %E, %E \n ", s2[index].x, u2[index].x, u2[index].y, u2[index].z, Fx, Fy, (PS.x / dV + s_1.x * u_1.x / x));
+        printf("Cell 0; 100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E\n ", s2[index].x, u2[index].x, u2[index].y, u2[index].z, Fx, Fy, (PS.x / dV + s_1.x * u_1.x / x), PS.x, x);
     }
 
 

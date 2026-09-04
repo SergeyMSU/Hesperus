@@ -23,8 +23,8 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
-#define print_i (0)           // предполагаем, что M чётное
-#define print_j (100)           // предполагаем, что M чётное
+#define print_i (34800)           // предполагаем, что M чётное
+#define print_j (254)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -114,7 +114,7 @@
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.45 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
+#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
 #define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
@@ -475,6 +475,47 @@ __global__ void compute_fluxes(
     int i_l = tx + HALO;
     int j_l = ty + HALO;
 
+    // Заполняем фиктивные ячейки симметричными условиями
+    if (j == M - 1)
+    {
+        sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
+        sh_Vx[i_l][j_l + 1] = -sh_Vx[i_l][j_l];
+        sh_Bx[i_l][j_l + 1] = -sh_Bx[i_l][j_l];
+        sh_Bz[i_l][j_l + 1] = -sh_Bz[i_l][j_l];
+        sh_By[i_l][j_l + 1] = sh_By[i_l][j_l];
+        sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
+        sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];
+
+        sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l - 1];
+        sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l - 1];
+        sh_Bx[i_l][j_l + 2] = -sh_Bx[i_l][j_l - 1];
+        sh_Bz[i_l][j_l + 2] = -sh_Bz[i_l][j_l - 1];
+        sh_Vy[i_l][j_l + 2] = sh_Vy[i_l][j_l - 1];
+        sh_By[i_l][j_l + 2] = sh_By[i_l][j_l - 1];
+        sh_rho[i_l][j_l + 2] = sh_rho[i_l][j_l - 1];
+    }
+
+    if (j == 0)
+    {
+        sh_Vz[i_l][j_l - 1] = -sh_Vz[i_l][j_l];
+        sh_Vx[i_l][j_l - 1] = -sh_Vx[i_l][j_l];
+        sh_Bx[i_l][j_l - 1] = -sh_Bx[i_l][j_l];
+        sh_Bz[i_l][j_l - 1] = -sh_Bz[i_l][j_l];
+        sh_By[i_l][j_l - 1] = sh_By[i_l][j_l];
+        sh_Vy[i_l][j_l - 1] = sh_Vy[i_l][j_l];
+        sh_rho[i_l][j_l - 1] = sh_rho[i_l][j_l];
+
+        sh_Vz[i_l][j_l - 2] = -sh_Vz[i_l][j_l + 1];
+        sh_Vx[i_l][j_l - 2] = -sh_Vx[i_l][j_l + 1];
+        sh_Bx[i_l][j_l - 2] = -sh_Bx[i_l][j_l + 1];
+        sh_Bz[i_l][j_l - 2] = -sh_Bz[i_l][j_l + 1];
+        sh_Vy[i_l][j_l - 2] = sh_Vy[i_l][j_l + 1];
+        sh_By[i_l][j_l - 2] = sh_By[i_l][j_l + 1];
+        sh_rho[i_l][j_l - 2] = sh_rho[i_l][j_l + 1];
+    }
+    __syncthreads();
+
+
     double tmin = 1.0E30;
 
 
@@ -522,50 +563,6 @@ __global__ void compute_fluxes(
                     phi4 = PHI_CENTER(j + 2);
                 }
 
-                // Ставим симметрию на оси
-                if (j == 0)
-                {
-                    sh_Vz[i_l][j_l - 1] = -sh_Vz[i_l][j_l];
-                    sh_Vx[i_l][j_l - 1] = -sh_Vx[i_l][j_l];
-                    sh_Bx[i_l][j_l - 1] = -sh_Bx[i_l][j_l];
-                    sh_Bz[i_l][j_l - 1] = -sh_Bz[i_l][j_l];
-
-                    sh_Vz[i_l][j_l - 2] = -sh_Vz[i_l][j_l + 1];
-                    sh_Vx[i_l][j_l - 2] = -sh_Vx[i_l][j_l + 1];
-                    sh_Bx[i_l][j_l - 2] = -sh_Bx[i_l][j_l + 1];
-                    sh_Bz[i_l][j_l - 2] = -sh_Bz[i_l][j_l + 1];
-
-                    sh_Vy[i_l][j_l - 2] = sh_Vy[i_l][j_l + 1];
-                    sh_By[i_l][j_l - 2] = sh_By[i_l][j_l + 1];
-                    sh_rho[i_l][j_l - 2] = sh_rho[i_l][j_l + 1];
-                }
-
-                if (j == M - 1)
-                {
-                    sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
-                    sh_Vx[i_l][j_l + 1] = -sh_Vx[i_l][j_l];
-                    sh_Bx[i_l][j_l + 1] = -sh_Bx[i_l][j_l];
-                    sh_Bz[i_l][j_l + 1] = -sh_Bz[i_l][j_l];
-
-                    sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l - 1];
-                    sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l - 1];
-                    sh_Bx[i_l][j_l + 2] = -sh_Bx[i_l][j_l - 1];
-                    sh_Bz[i_l][j_l + 2] = -sh_Bz[i_l][j_l - 1];
-                    sh_Vy[i_l][j_l + 2] = sh_Vy[i_l][j_l - 1];
-                    sh_By[i_l][j_l + 2] = sh_By[i_l][j_l - 1];
-                    sh_rho[i_l][j_l + 2] = sh_rho[i_l][j_l - 1];
-                }
-                else if (j == M - 2)
-                {
-                    sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l + 1];
-                    sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l + 1];
-                    sh_Bx[i_l][j_l + 2] = -sh_Bx[i_l][j_l + 1];
-                    sh_Bz[i_l][j_l + 2] = -sh_Bz[i_l][j_l + 1];
-
-                    sh_rho[i_l][j_l + 2] = sh_rho[i_l][j_l + 1];
-                    sh_Vy[i_l][j_l + 2] = sh_Vy[i_l][j_l + 1];
-                    sh_By[i_l][j_l + 2] = sh_By[i_l][j_l + 1];
-                }
 
                 rho_L = linear(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
@@ -852,7 +849,6 @@ __global__ void compute_fluxes(
                 }
 
 
-
                 rho_L = linear(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
                 rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
@@ -889,8 +885,8 @@ __global__ void compute_fluxes(
                             dVr[j * N + i] = dVr_;
 
 
-                            double fline = F_line * sh_rho[i_l][j_l] * pow(fabs(dVr_) / sh_rho[i_l][j_l], alpha_line) / kv(r);
-                            tmin = my_min(tmin, krit * h2 / (alpha_line * fline / max(fabs(dVr_), 0.0005)));
+                            //double fline = F_line * sh_rho[i_l][j_l] * pow( min(fabs(dVr_), 1000.0) / sh_rho[i_l][j_l], alpha_line) / kv(r);
+                            //tmin = my_min(tmin, krit * h2 * max(fabs(dVr_), 0.001) / (alpha_line * fline));
                         }
                         
 
@@ -999,14 +995,14 @@ __global__ void compute_fluxes(
 
 
                 rho_L = sh_rho[i_l - 1][j_l];
-                rho_R = linear(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
-                if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l];
+                rho_R = rho_L; // linear(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
+                //if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l];
 
                 Vz_L = sh_Vz[i_l - 1][j_l];
-                Vz_R = linear(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
+                Vz_R = Vz_L; // linear(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
 
                 Bz_L = sh_Bz[i_l - 1][j_l];
-                Bz_R = linear(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
+                Bz_R = Bz_L; // linear(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
 
                 // Скорости Vx, Vy
                 if (true)
@@ -1014,30 +1010,30 @@ __global__ void compute_fluxes(
                     double Vr_R, Vphi_R;
 
                     // Vr
-                    if (true)
-                    {
-                        double Vr1 = sh_Vx[i_l - 1][j_l] * cos(phi_g) + sh_Vy[i_l - 1][j_l] * sin(phi_g);
-                        double Vr2 = sh_Vx[i_l][j_l] * cos(phi_g) + sh_Vy[i_l][j_l] * sin(phi_g);
-                        double Vr4 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
+                    //if (true)
+                    //{
+                    //    double Vr1 = sh_Vx[i_l - 1][j_l] * cos(phi_g) + sh_Vy[i_l - 1][j_l] * sin(phi_g);
+                    //    double Vr2 = sh_Vx[i_l][j_l] * cos(phi_g) + sh_Vy[i_l][j_l] * sin(phi_g);
+                    //    double Vr4 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
 
-                        Vr_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
-                    }
+                    //    Vr_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
+                    //}
 
-                    // Vphi
-                    if (true)
-                    {
-                        double Vr1 = -sh_Vx[i_l - 1][j_l] * sin(phi_g) + sh_Vy[i_l - 1][j_l] * cos(phi_g);
-                        double Vr2 = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
-                        double Vr4 = -sh_Vx[i_l + 1][j_l] * sin(phi_g) + sh_Vy[i_l + 1][j_l] * cos(phi_g);
+                    //// Vphi
+                    //if (true)
+                    //{
+                    //    double Vr1 = -sh_Vx[i_l - 1][j_l] * sin(phi_g) + sh_Vy[i_l - 1][j_l] * cos(phi_g);
+                    //    double Vr2 = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
+                    //    double Vr4 = -sh_Vx[i_l + 1][j_l] * sin(phi_g) + sh_Vy[i_l + 1][j_l] * cos(phi_g);
 
-                        Vphi_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
-                    }
+                    //    Vphi_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
+                    //}
 
                     Vx_L = sh_Vx[i_l - 1][j_l];
                     Vy_L = sh_Vy[i_l - 1][j_l];
 
-                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
-                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    Vx_R = Vx_L; // Vr_R* cos(phi_g) - Vphi_R * sin(phi_g);
+                    Vy_R = Vy_L; // Vr_R* sin(phi_g) + Vphi_R * cos(phi_g);
                 }
 
                 // Магнитные поля Bx, By
@@ -1046,30 +1042,30 @@ __global__ void compute_fluxes(
                     double Br_R, Bphi_R;
 
                     // Br
-                    if (true)
-                    {
-                        double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_By[i_l][j_l] * sin(phi_g);
-                        double Br2 = sh_Bx[i_l + 1][j_l] * cos(phi_g) + sh_By[i_l + 1][j_l] * sin(phi_g);
-                        double Br4 = sh_Bx[i_l + 2][j_l] * cos(phi_g) + sh_By[i_l + 2][j_l] * sin(phi_g);
+                    //if (true)
+                    //{
+                    //    double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_By[i_l][j_l] * sin(phi_g);
+                    //    double Br2 = sh_Bx[i_l + 1][j_l] * cos(phi_g) + sh_By[i_l + 1][j_l] * sin(phi_g);
+                    //    double Br4 = sh_Bx[i_l + 2][j_l] * cos(phi_g) + sh_By[i_l + 2][j_l] * sin(phi_g);
 
-                        Br_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
-                    }
+                    //    Br_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
+                    //}
 
-                    // Bphi
-                    if (true)
-                    {
-                        double Br1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
-                        double Br2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
-                        double Br4 = -sh_Bx[i_l + 2][j_l] * sin(phi_g) + sh_By[i_l + 2][j_l] * cos(phi_g);
+                    //// Bphi
+                    //if (true)
+                    //{
+                    //    double Br1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
+                    //    double Br2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
+                    //    double Br4 = -sh_Bx[i_l + 2][j_l] * sin(phi_g) + sh_By[i_l + 2][j_l] * cos(phi_g);
 
-                        Bphi_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
-                    }
+                    //    Bphi_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
+                    //}
 
                     Bx_L = sh_Bx[i_l - 1][j_l];
                     By_L = sh_By[i_l - 1][j_l];
 
-                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
-                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    Bx_R = Bx_L; // Br_R* cos(phi_g) - Bphi_R * sin(phi_g);
+                    By_R = By_L; // Br_R* sin(phi_g) + Bphi_R * cos(phi_g);
                 }
             }
 
@@ -1085,11 +1081,11 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
 
-                if (i == print_i && j == print_j)
-                {
-                    printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
-                    printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
-                }
+                //if (i == print_i && j == print_j)
+                //{
+                //    printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
+                //    printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
+                //}
 
                 int idx_h = j * (N + 1) + i;
                 v_Prho[idx_h] = P[0];
@@ -1103,10 +1099,10 @@ __global__ void compute_fluxes(
         }
     }
 
-    //atomicMinDouble(dT, tmin);
+    atomicMinDouble(dT, tmin);
 
     // Найдём минимальное время
-    if (true)
+    if (false)
     {
         // 1. Редукция внутри блока
         int tid = tx + ty * BX;
@@ -1167,7 +1163,7 @@ __global__ void update_cells(
 
     double Fx = 0.0, Fy = 0.0;
 
-    double dTime = 1.0E-4; // *dT;
+    double dTime = *dT; // 1.0E-4; // *dT;
 
     // Вычисляем силы
     if (true)
@@ -1286,7 +1282,7 @@ __global__ void update_cells(
 
     if (i == print_i && j == print_j)
     {
-        printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x));
+        printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
     }
 }
 
@@ -1345,10 +1341,10 @@ void test_polar_geometry(void)
 
 int main(void)
 {
-    bool read_setka = false;                     // Нужно ли считывать сетку
+    bool read_setka = true;                     // Нужно ли считывать сетку с файла
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 2; // 24000 * 60 * 9; // Число шагов
+    string name2 = "save_zOph_1(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 35000 * 7; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_all_T = 0.0;
 
@@ -1443,8 +1439,41 @@ int main(void)
         d_node.Ez = allocateDevice<double>(nodeCount);
     }
 
+
+    // Считываение с файла
+    if (read_setka)
+    {
+        std::ifstream fin(name1, std::ios::binary);
+        if (!fin.is_open()) {
+            std::cerr << "Error erghiuegegrgerrg  " << name1 << std::endl;
+            exit(-1);
+        }
+
+        for (int k = 0; k < K; ++k) 
+        {
+            fin.read(reinterpret_cast<char*>(&h_cell.rho[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.Vx[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.Vy[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.Vz[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.Bx[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.By[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.Bz[k]), sizeof(double));
+
+            // Проверка на ошибки чтения
+            if (fin.fail()) 
+            {
+                std::cerr << "Error eurghiuyehrfoenripfu  = " << k << std::endl;
+                fin.close();
+                exit(-1);
+            }
+        }
+
+        fin.close();
+    }
+
+
     // Заполнение массивов начальными условиями
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -1470,7 +1499,7 @@ int main(void)
             h_cell.Vz[k] = vphi;
         }
     }
-
+    
     // Копирование всех массивов на device
     if (true)
     {
@@ -1581,6 +1610,7 @@ int main(void)
     cudaEventElapsedTime(&elapsedTime, start, stop);
     printf("Time:  %.2f sec\n", elapsedTime / 1000.0);
 
+    // Копируем обратно на хост
     if (true)
     {
         copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
@@ -1590,6 +1620,24 @@ int main(void)
         copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
         copyFromDevice(h_cell.By, d_cell.By, cellCount);
         copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
+    }
+
+    // Сохраняем результат в .bin
+    if (true)
+    {
+        ofstream bfout;
+        bfout.open(name2, ios::binary);
+        for (int k = 0; k < K; k++)
+        {
+            bfout.write((char*)&h_cell.rho[k], sizeof(double));
+            bfout.write((char*)&h_cell.Vx[k], sizeof(double));
+            bfout.write((char*)&h_cell.Vy[k], sizeof(double));
+            bfout.write((char*)&h_cell.Vz[k], sizeof(double));
+            bfout.write((char*)&h_cell.Bx[k], sizeof(double));
+            bfout.write((char*)&h_cell.By[k], sizeof(double));
+            bfout.write((char*)&h_cell.Bz[k], sizeof(double));
+        }
+        bfout.close();
     }
 
     // Печатаем результат 2D

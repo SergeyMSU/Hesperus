@@ -4,7 +4,7 @@ CXXFLAGS = -O3 -rdc=true
 LDFLAGS = -rdc=true
 
 # Имя итогового исполняемого файла
-TARGET = program
+TARGET = program5
 
 # Список объектных файлов
 OBJS = Gas_Dinamic.o kernel.o
