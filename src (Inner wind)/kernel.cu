@@ -19,7 +19,7 @@
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define print_i (0)           // предполагаем, что M чётное
-#define print_j (100000000)           // предполагаем, что M чётное
+#define print_j (100)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -109,7 +109,7 @@
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.45 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
+#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
 #define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
@@ -2098,6 +2098,70 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         //r41 = R_CENTER(n - 2);
         phi41 = phi;
     }
+    else if (n == 1)
+    {
+        r41 = 1.0;
+        phi41 = phi;
+
+        double x41, y41;
+        x41 = 1.0 * cos(phi);
+        y41 = 1.0 * sin(phi);
+        // крайняя ячейка слева области
+
+        double Vr;
+       
+
+        // линейный снос Vr
+        double Vr1 = u_4.x * cos(phi) + u_4.y * sin(phi);
+        double Vr2 = u_1.x * cos(phi) + u_1.y * sin(phi);
+        Vr = Vr1 + (Vr2 - Vr1) / (r - r4) * (r41 - r4);
+
+
+        if (Vr < 0.000001) Vr = Vr1;
+        if (Vr <= 0.0) Vr = 0.0;
+
+        double Vphi = 0.0;
+
+
+        double vphi_ = V_phi_init * sin(pi / 2.0 - phi);
+
+        double rho_0 = rho_in; // / 5.0;// v_in / Vr;
+
+        s_41 = { rho_0, const_p * rho_0 };
+        s_41.z = s_4.z;
+
+        //u_4 = { 0.0, 0.0, 0.0 };
+        //s_4 = { 1.0, 1.0};
+
+        b_41.z = b_4.z;
+
+        double Br1 = b_4.x * cos(phi) + b_4.y * sin(phi);
+        double Br = kv(r4) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r4, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
+
+
+        double Bphi1 = -b_4.x * sin(phi) + b_4.y * cos(phi);
+        double Bphi2 = -b_1.x * sin(phi) + b_1.y * cos(phi);
+        double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r - r4) * (r41 - r4);
+        //Bphi = 0.0;
+
+        //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
+
+        b_41.x = (Br * cos(phi) - Bphi * sin(phi));
+        b_41.y = (Br * sin(phi) + Bphi * cos(phi));
+
+        double Br_dipole = Bo_init * cos(pi / 2.0 - phi);
+        double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
+
+
+        if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+        {
+            Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+        }
+
+        u_41.x = (Vr * cos(phi) - Vphi * sin(phi));
+        u_41.y = (Vr * sin(phi) + Vphi * cos(phi));
+        u_41.z = vphi_;
+    }
 
     if ((m == 0))
     {
@@ -2439,7 +2503,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             w_L = linear(r2, u_2.z, r, u_1.z, r4, u_4.z, r_g);
             bz_L = linear(r2, b_2.z, r, b_1.z, r4, b_4.z, r_g);
 
-            if (n >= 2)
+            if (n >= 1)
             {
                 rho_R = linear(r, s_1.x * kv(r), r4, s_4.x * kv(r4), r41, s_41.x * kv(r41), r_g) / kv(r_g);
                 if (rho_R <= 0.0) rho_R = s_4.x;
@@ -2740,7 +2804,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     Pdiv = Pdiv + dV * bx / x;
     //Pdiv = 0.0;
 
-    //*T_do = 1.0E-4;
+    *T_do = 1.0E-4;
 
     s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
     //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
@@ -3024,7 +3088,7 @@ int main(void)
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем
     string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем
-    int all_step = 20000;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    int all_step = 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3095,7 +3159,7 @@ int main(void)
     *host_ch_posle = 0.0;
     
     // Считываем начальное с файла.
-    if (true)
+    if (false)
     {
 
         ifstream bfin(name1, ios::binary);
@@ -3145,19 +3209,19 @@ int main(void)
             //if (the > pi / 2.0) Br = -Br;
 
 
-            //host_s[k] = { rho, const_p * rho, 0.0};
+            host_s[k] = { rho, const_p * rho, 0.0};
 
             //host_s[k] = {1.0, 0.000223681};
 
-            //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
+            host_u[k] = { vr * x / dist, vr * y / dist, vphi};
             //host_u[k].z = vphi;
             //host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
             // 
             //host_s[k] = { 1.0, 1.0};
             //host_u[k] = { 0.0, 0.0, 0.0 };
 
-            /*host_s2[k] = host_s[k];
-            host_u2[k] = host_u[k];*/
+            host_s2[k] = host_s[k];
+            host_u2[k] = host_u[k];
 
             double Br = B0 * cos(the) * pow(1.0 / dist, 3.0);
             double Bphi = -B0/2.0 * sin(the) * pow(1.0 / dist, 3.0);

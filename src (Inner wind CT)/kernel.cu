@@ -24,7 +24,7 @@
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
 #define print_i (0)           // предполагаем, что M чётное
-#define print_j (10000000)           // предполагаем, что M чётное
+#define print_j (100)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -114,7 +114,7 @@
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.45 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
+#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
 #define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
@@ -966,11 +966,11 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
 
-                if (i == print_i && j == print_j)
+                /*if (i == print_i && j == print_j)
                 {
                     printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
                     printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
-                }
+                }*/
 
                 int idx_h = j * (N + 1) + (i + 1);
                 v_Prho[idx_h] = P[0];
@@ -1085,6 +1085,12 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
 
+                if (i == print_i && j == print_j)
+                {
+                    printf("Gran 0;100 := %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
+                    printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
+                }
+
                 int idx_h = j * (N + 1) + i;
                 v_Prho[idx_h] = P[0];
                 v_Pvx[idx_h] = P[1];
@@ -1161,7 +1167,7 @@ __global__ void update_cells(
 
     double Fx = 0.0, Fy = 0.0;
 
-    double dTime = *dT; // 1.0E-4; // *dT;
+    double dTime = 1.0E-4; // *dT;
 
     // Вычисляем силы
     if (true)
@@ -1342,7 +1348,7 @@ int main(void)
     bool read_setka = false;                     // Нужно ли считывать сетку
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 20000; // 24000 * 60 * 9; // Число шагов
+    int all_step = 2; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_all_T = 0.0;
 
