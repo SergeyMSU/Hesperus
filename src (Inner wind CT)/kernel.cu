@@ -23,6 +23,14 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
+
+// Следующие определения для ядра  compute_cell_ez_and_slopes
+#define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
+#define SLOPE_BY BY
+#define SLOPE_SHARED_I (SLOPE_BX + 2)   // +1 halo слева, +1 halo справа
+#define SLOPE_SHARED_J (SLOPE_BY + 2)   // +1 halo снизу, +1 halo сверху
+
+
 #define print_i (34800)           // предполагаем, что M чётное
 #define print_j (254)           // предполагаем, что M чётное
 
@@ -159,13 +167,34 @@
 #define Nmin 3              // Каждую какую точку выводим?
 #define THREADS_PER_BLOCK 256    // Количество нитей в одном потоке // Необходимо, чтобы количество ячеек в сетке делилось на число нитей (лучше N делилось на число нитей)
 
+using namespace std;
+
 __host__ __device__ int sign(double& x);
 __host__ __device__ double minmod(double x, double y);
 __host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y);
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
     double& A, double& B);
 
-using namespace std;
+__device__ __forceinline__ double hll_blend(double d_L, double d_R, double SL, double SR)
+{
+    if (SL >= 0.0) return d_L;
+    if (SR <= 0.0) return d_R;
+    return (SR * d_L - SL * d_R) / (SR - SL);
+    // TODO(user): проверьте знаки/порядок d_L, d_R относительно того, как вы
+    // определяете "левое"/"правое" состояние в самом HLLDQ_Korolkov, чтобы
+    // соглашение о знаках SL/SR было согласовано (обычно SL<0<SR, "L" -- это
+    // состояние с меньшим индексом координаты, что у вас и есть).
+}
+
+__device__ __forceinline__ double compute_Ez_cell(double Vx, double Vy, double Bx, double By)
+{
+    return -(Vx * By - Vy * Bx);
+}
+
+__device__ __forceinline__ int idx_cell(int i, int j) { return j * N + i; }
+__device__ __forceinline__ int idx_hface(int i, int j) { return j * N + i; }         // N x (M+1)
+__device__ __forceinline__ int idx_vface(int i, int j) { return j * (N + 1) + i; }    // (N+1) x M
+__device__ __forceinline__ int idx_node(int i, int j) { return j * (N + 1) + i; }     // (N+1) x (M+1)
 
 // Переменные в центрах ячеек
 struct CellVars {
@@ -1126,6 +1155,134 @@ __global__ void compute_fluxes(
         }
     }
 }
+
+
+// Функция расчёта Ez на всех узлах (кроме граничных). Но она сохраняет значения в 4 массива
+__global__ void compute_cell_ez_and_slopes(
+    const double* Vx, const double* Vy, const double* Bx, const double* By,
+    //double* Ez_cell,                          // выход: N*M, тоже нужен снаружи (например для диагностики)
+    const double* h_Pbx, const double* h_Pby, const double* h_SL, const double* h_SR,   // грани, N x (M+1)
+    const double* v_Pbx, const double* v_Pby, const double* v_SL, const double* v_SR,   // грани, (N+1) x M
+    double* slot_h_from_left,   // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
+    double* slot_h_from_right,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i,   j+1)
+    double* slot_v_from_below,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
+    double* slot_v_from_above,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j)
+    {
+        __shared__ double sh_Ez[SLOPE_SHARED_I][SLOPE_SHARED_J];  // Ez в центрах ячеек - проще один раз посчитать и засунуть в shared
+
+        int tx = threadIdx.x;
+        int ty = threadIdx.y;
+        int i_start = blockIdx.x * SLOPE_BX;
+        int j_start = blockIdx.y * SLOPE_BY;
+
+        int i = i_start + tx;
+        int j = j_start + ty;
+
+        // --- 1. Каждый поток считает Ez_cell для СВОЕЙ ячейки (включая один halo-слой) ---
+        // Загружаем блок (SLOPE_BX+2) x (SLOPE_BY+2) ячеек Ez_cell в shared.
+        {
+            int total_load = SLOPE_SHARED_I * SLOPE_SHARED_J;
+            int tid = tx + ty * SLOPE_BX;
+            for (int k = tid; k < total_load; k += SLOPE_BX * SLOPE_BY)
+            {
+                int il = k / SLOPE_SHARED_J;
+                int jl = k % SLOPE_SHARED_J;
+                int ig = i_start - 1 + il;
+                int jg = j_start - 1 + jl;
+
+                double ez;
+                if (ig >= 0 && ig < N && jg >= 0 && jg < M)
+                {
+                    ez = compute_Ez_cell(Vx[idx_cell(ig, jg)], Vy[idx_cell(ig, jg)],
+                        Bx[idx_cell(ig, jg)], By[idx_cell(ig, jg)]);
+                }
+                else
+                {
+                    int ic = min(max(ig, 0), N - 1);
+                    int jc = min(max(jg, 0), M - 1);
+                    ez = compute_Ez_cell(Vx[idx_cell(ic, jc)], Vy[idx_cell(ic, jc)],
+                        Bx[idx_cell(ic, jc)], By[idx_cell(ic, jc)]);
+                }
+                sh_Ez[il][jl] = ez;
+            }
+        }
+        __syncthreads();
+
+        if (i >= N || j >= M) return;
+
+        int il = tx + 1;  // локальный индекс своей ячейки в shared (с учётом halo=1)
+        int jl = ty + 1;
+
+        double ez_here = sh_Ez[il][jl];
+        double ez_right = sh_Ez[il + 1][jl];   // сосед справа (i+1, j)
+        double ez_up = sh_Ez[il][jl + 1];   // сосед сверху (i, j+1)
+
+        // Записываем Ez_cell в выходной массив (пригодится для отладки/других нужд)
+        //Ez_cell[idx_cell(i, j)] = ez_here;
+
+        // ---------------------------------------------------------------------
+        // A) ВЕРХНЯЯ h-грань этой ячейки = h-грань(i, j+1)
+        // для самой верхней грани этим можно не заниматься, так как для оси симметрии Ez = 0
+        if(j < M - 1) 
+        {
+            double phi_g = PHI_RIGHT(j);
+            double ez_face = -(h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
+            double SL = h_SL[idx_hface(i, j + 1)];
+            double SR = h_SR[idx_hface(i, j + 1)];
+
+            // Считаем Ez на вертикальных гранях для этой и соседней ячейки (чтобы снести в узлы)
+            
+            phi_g = PHI_CENTER(j);
+            double ez_face_DL = -v_Pbx[idx_vface(i, j)]     * sin(phi_g) + v_Pby[idx_vface(i, j)]     * cos(phi_g); // Нижняя левая
+            double ez_face_DR = -v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g); // Нижняя правая
+            phi_g = PHI_CENTER(j + 1);
+            double ez_face_UL = -v_Pbx[idx_vface(i, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i, j + 1)] * cos(phi_g); // Верхняя левая
+            double ez_face_UR = -v_Pbx[idx_vface(i + 1, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j + 1)] * cos(phi_g); // Верхняя правая
+
+            // Хотим сносить в левый узел на грани
+            double d_below = (ez_face_DL - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            double d_above = (ez_face_UL - sh_Ez[il][jl + 1]);
+            slot_h_from_right[idx_node(i, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            // Хотим сносить в праввый узел на грани
+            d_below = (ez_face_DR - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            d_above = (ez_face_UR - sh_Ez[il][jl + 1]);
+            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+        }
+
+        // ---------------------------------------------------------------------
+        // B) ПРАВАЯ v-грань этой ячейки = v-грань(i+1, j)
+        // для самой правой грани этим можно не заниматься, так как для свободных граничных условий надо просто снести Ez из соседних узлов слева
+        if (i < N - 1)
+        {
+            double phi_g = PHI_CENTER(j);
+            double ez_face = -v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g);
+            double SL = v_SL[idx_vface(i + 1, j)];
+            double SR = v_SR[idx_vface(i + 1, j)];
+
+            // Считаем Ez на горизонтальных гранях для этой и соседней ячейки (чтобы снести в узлы)
+
+            phi_g = PHI_RIGHT(j - 1);
+            double ez_face_LD = -(h_Pbx[idx_hface(i, j)] * cos(phi_g) + h_Pby[idx_hface(i, j)] * sin(phi_g)); // Нижняя левая
+            double ez_face_RD = -(h_Pbx[idx_hface(i + 1, j)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j)] * sin(phi_g)); // Верхняя левая
+
+            phi_g = PHI_RIGHT(j);
+            double ez_face_LU = -(h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g)); // Нижняя правая
+            double ez_face_RU = -(h_Pbx[idx_hface(i + 1, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j + 1)] * sin(phi_g)); // Верхняя правая
+
+            // Хотим сносить в верхний узел на грани
+            double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            double d_above = (ez_face_RU - sh_Ez[il + 1][jl]);
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            // Хотим сносить в нижний узел на грани
+            d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+        }
+    }
+
+// Нужно написать ядро, обновляющее Bn на каждой грани
 
 __global__ void update_cells(
     double* rho, double* Vx, double* Vy, double* Vz,
