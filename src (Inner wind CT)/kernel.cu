@@ -130,7 +130,7 @@
 
 #define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.001 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
@@ -191,10 +191,10 @@ __device__ __forceinline__ double compute_Ez_cell(double Vx, double Vy, double B
     return -(Vx * By - Vy * Bx);
 }
 
-__device__ __forceinline__ int idx_cell(int i, int j) { return j * N + i; }
-__device__ __forceinline__ int idx_hface(int i, int j) { return j * N + i; }         // N x (M+1)
-__device__ __forceinline__ int idx_vface(int i, int j) { return j * (N + 1) + i; }    // (N+1) x M
-__device__ __forceinline__ int idx_node(int i, int j) { return j * (N + 1) + i; }     // (N+1) x (M+1)
+__host__ __device__ __forceinline__ int idx_cell(int i, int j) { return j * N + i; }
+__host__ __device__ __forceinline__ int idx_hface(int i, int j) { return j * N + i; }         // N x (M+1)
+__host__ __device__ __forceinline__ int idx_vface(int i, int j) { return j * (N + 1) + i; }    // (N+1) x M
+__host__ __device__ __forceinline__ int idx_node(int i, int j) { return j * (N + 1) + i; }     // (N+1) x (M+1)
 
 // Переменные в центрах ячеек
 struct CellVars {
@@ -203,12 +203,12 @@ struct CellVars {
 
 // Переменные на гранях (потоки или другие величины)
 struct FaceVars {
-    double* Prho, * Pvx, * Pvy, * Pvz, * Pbx, * Pby, * Pbz, * Bn;
+    double* Prho, * Pvx, * Pvy, * Pvz, * Pbx, * Pby, * Pbz, * Bn, * SL, * SR;
 };
 
 // Переменные в узлах (например, электрическое поле)
 struct NodeVars {
-    double* Ez;
+    double* Ez, * slot_h_from_left, * slot_h_from_right, * slot_v_from_below, * slot_v_from_above;
 };
 
 template<typename T>
@@ -443,9 +443,9 @@ __global__ void compute_fluxes(
     const double* rho, const double* Vx, const double* Vy, const double* Vz,
     const double* Bx, const double* By, const double* Bz, double* dVr,
     double* h_Prho, double* h_Pvx, double* h_Pvy, double* h_Pvz,
-    double* h_Pbx, double* h_Pby, double* h_Pbz, const double* h_Bn,
+    double* h_Pbx, double* h_Pby, double* h_Pbz, const double* h_Bn, double* h_SL, double* h_SR,
     double* v_Prho, double* v_Pvx, double* v_Pvy, double* v_Pvz,
-    double* v_Pbx, double* v_Pby, double* v_Pbz, const double* v_Bn, 
+    double* v_Pbx, double* v_Pby, double* v_Pbz, const double* v_Bn, double* v_SL, double* v_SR,
     double* dT)
 {
     // Shared memory для всех 7 переменных ячеек
@@ -680,21 +680,34 @@ __global__ void compute_fluxes(
             // Считаем поток
             if (true)
             {
-                // Надо будет ещё подпроавить Bn в ячейке
+                int idx_h = (j + 1) * N + i;
+
+                // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
+                {
+                    double Br = Bx_L * cos(phi_g) + By_L * sin(phi_g);
+                    double Bphi = h_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
+                    Br = Bx_R * cos(phi_g) + By_R * sin(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
+
                 double PQ = 0.0;
+                double SL = 0.0, SR = 0.0;
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, DPHI(j) * r, 1));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 1));
 
                 /*if (i == 3 && j == 3)
                 {
                     printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
                 }*/
 
-                int idx_h = (j + 1) * N + i;
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
@@ -702,6 +715,9 @@ __global__ void compute_fluxes(
                 h_Pbx[idx_h] = P[4];
                 h_Pby[idx_h] = P[5];
                 h_Pbz[idx_h] = P[6];
+
+                h_SL[idx_h] = SL;
+                h_SR[idx_h] = SR;
             }
         }
 
@@ -807,16 +823,29 @@ __global__ void compute_fluxes(
             // Считаем поток
             if (true)
             {
-                // Надо будет ещё подпроавить Bn в ячейке
+                int idx_h = j * N + i;
+
+                // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
+                {
+                    double Br = Bx_L * cos(phi_g) + By_L * sin(phi_g);
+                    double Bphi = h_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
+                    Br = Bx_R * cos(phi_g) + By_R * sin(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
+
                 double PQ = 0.0;
+                double SL = 0.0, SR = 0.0;
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, 0.0, 0.0, 0.0,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, DPHI(j) * r, 1));
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 1));
 
-                int idx_h = j * N + i;
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
@@ -824,6 +853,9 @@ __global__ void compute_fluxes(
                 h_Pbx[idx_h] = P[4];
                 h_Pby[idx_h] = P[5];
                 h_Pbz[idx_h] = P[6];
+
+                h_SL[idx_h] = SL;
+                h_SR[idx_h] = SR;
             }
         }
 
@@ -871,10 +903,25 @@ __global__ void compute_fluxes(
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
                     }*/
 
+                    double Br = Bo_init * cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
+
+                    double Bphi1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
+                    double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
+                    double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r_g - r);
+
+                    if (fabs(Br) > 0.00001)
+                    {
+                        Vphi = Vr * Bphi / Br;
+                    }
+
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
                     sh_Vy[i_l - 1][j_l] = (Vr * sin(phi_g) + Vphi * cos(phi_g));
                     sh_Vz[i_l - 1][j_l] = V_phi_init * sin(pi / 2.0 - phi_g);
+
+                    sh_Bx[i_l - 1][j_l] = (Br * cos(phi_g) - Bphi * sin(phi_g));
+                    sh_By[i_l - 1][j_l] = (Br * sin(phi_g) + Bphi * cos(phi_g));
+                    sh_Bz[i_l - 1][j_l] = sh_Bz[i_l][j_l];
                 }
 
 
@@ -906,7 +953,7 @@ __global__ void compute_fluxes(
                         // Сохраняем dVr/dr для дальнейшего вычисления силы в ячейке
                         if (true)
                         {
-                            double h1 = r - r3;
+                            // double h1 = r - r3;
                             double h2 = r2 - r;
                             double dVr_;
                             //dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
@@ -982,14 +1029,28 @@ __global__ void compute_fluxes(
             // Считаем поток
             if (true)
             {
-                // Надо будет ещё подправить Bn в ячейке
+                int idx_h = j * (N + 1) + (i + 1);
+
+                // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
+                {
+                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                    double Br = v_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
+                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
+
                 double PQ = 0.0;
+                double SL = 0.0, SR = 0.0;
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, 0.0, 0.0, 0.0,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 1));
 
                 /*if (i == print_i && j == print_j)
                 {
@@ -997,7 +1058,6 @@ __global__ void compute_fluxes(
                     printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
                 }*/
 
-                int idx_h = j * (N + 1) + (i + 1);
                 v_Prho[idx_h] = P[0];
                 v_Pvx[idx_h] = P[1];
                 v_Pvy[idx_h] = P[2];
@@ -1005,6 +1065,9 @@ __global__ void compute_fluxes(
                 v_Pbx[idx_h] = P[4];
                 v_Pby[idx_h] = P[5];
                 v_Pbz[idx_h] = P[6];
+
+                v_SL[idx_h] = SL;
+                v_SR[idx_h] = SR;
             }
         }
 
@@ -1012,15 +1075,15 @@ __global__ void compute_fluxes(
         if (i == 0)
         {
             double phi_g = PHI_CENTER(j);
-            double r_g = 1.0;
+            //double r_g = 1.0;
 
             // Сносим переменные на грани minmod
             if (true)
             {
-                double r1, r2, r4;
-                r1 = 1.0;
-                r2 = r;
-                r4 = R_CENTER(i + 1, j);
+                //double r1, r2, r4;
+                //r1 = 1.0;
+                //r2 = r;
+                //r4 = R_CENTER(i + 1, j);
 
 
                 rho_L = sh_rho[i_l - 1][j_l];
@@ -1036,7 +1099,7 @@ __global__ void compute_fluxes(
                 // Скорости Vx, Vy
                 if (true)
                 {
-                    double Vr_R, Vphi_R;
+                    //double Vr_R, Vphi_R;
 
                     // Vr
                     //if (true)
@@ -1068,7 +1131,7 @@ __global__ void compute_fluxes(
                 // Магнитные поля Bx, By
                 if (true)
                 {
-                    double Br_R, Bphi_R;
+                    //double Br_R, Bphi_R;
 
                     // Br
                     //if (true)
@@ -1101,14 +1164,35 @@ __global__ void compute_fluxes(
             // Считаем поток
             if (true)
             {
-                // Надо будет ещё подправить Bn в ячейке
+                int idx_h = j * (N + 1) + i;
+
+                // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
+                {
+                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                    double Br = v_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+
+                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
+
                 double PQ = 0.0;
+                double SL = 0.0, SR = 0.0;
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, 0.0, 0.0, 0.0,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, 0.0, 0.0, 0.0,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, DR(i), 1));
+                double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 1);
+
+                if (tmin_ < 1.0E-10)
+                {
+                    printf("tmin = 0;  %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, tmin_, Bx_L, By_L, Bz_L);
+                }
+
+                tmin = my_min(tmin, tmin_);
 
                 //if (i == print_i && j == print_j)
                 //{
@@ -1116,7 +1200,7 @@ __global__ void compute_fluxes(
                 //    printf("and := %E, %E, %E, %E \n", sh_rho[i_l][j_l], sh_rho[i_l + 1][j_l], sh_rho[i_l + 2][j_l], rho[j * N + i]);
                 //}
 
-                int idx_h = j * (N + 1) + i;
+                
                 v_Prho[idx_h] = P[0];
                 v_Pvx[idx_h] = P[1];
                 v_Pvy[idx_h] = P[2];
@@ -1124,6 +1208,9 @@ __global__ void compute_fluxes(
                 v_Pbx[idx_h] = P[4];
                 v_Pby[idx_h] = P[5];
                 v_Pbz[idx_h] = P[6];
+
+                v_SL[idx_h] = SL;
+                v_SR[idx_h] = SR;
             }
         }
     }
@@ -1166,7 +1253,7 @@ __global__ void compute_cell_ez_and_slopes(
     double* slot_h_from_left,   // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
     double* slot_h_from_right,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i,   j+1)
     double* slot_v_from_below,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
-    double* slot_v_from_above,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j)
+    double* slot_v_from_above)  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j)
     {
         __shared__ double sh_Ez[SLOPE_SHARED_I][SLOPE_SHARED_J];  // Ez в центрах ячеек - проще один раз посчитать и засунуть в shared
 
@@ -1213,10 +1300,6 @@ __global__ void compute_cell_ez_and_slopes(
         int il = tx + 1;  // локальный индекс своей ячейки в shared (с учётом halo=1)
         int jl = ty + 1;
 
-        double ez_here = sh_Ez[il][jl];
-        double ez_right = sh_Ez[il + 1][jl];   // сосед справа (i+1, j)
-        double ez_up = sh_Ez[il][jl + 1];   // сосед сверху (i, j+1)
-
         // Записываем Ez_cell в выходной массив (пригодится для отладки/других нужд)
         //Ez_cell[idx_cell(i, j)] = ez_here;
 
@@ -1226,18 +1309,18 @@ __global__ void compute_cell_ez_and_slopes(
         if(j < M - 1) 
         {
             double phi_g = PHI_RIGHT(j);
-            double ez_face = -(h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
+            double ez_face = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
             double SL = h_SL[idx_hface(i, j + 1)];
             double SR = h_SR[idx_hface(i, j + 1)];
 
             // Считаем Ez на вертикальных гранях для этой и соседней ячейки (чтобы снести в узлы)
             
             phi_g = PHI_CENTER(j);
-            double ez_face_DL = -v_Pbx[idx_vface(i, j)]     * sin(phi_g) + v_Pby[idx_vface(i, j)]     * cos(phi_g); // Нижняя левая
-            double ez_face_DR = -v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g); // Нижняя правая
+            double ez_face_DL = -(- v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g)); // Нижняя левая
+            double ez_face_DR = -( - v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g)); // Нижняя правая
             phi_g = PHI_CENTER(j + 1);
-            double ez_face_UL = -v_Pbx[idx_vface(i, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i, j + 1)] * cos(phi_g); // Верхняя левая
-            double ez_face_UR = -v_Pbx[idx_vface(i + 1, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j + 1)] * cos(phi_g); // Верхняя правая
+            double ez_face_UL = -(- v_Pbx[idx_vface(i, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i, j + 1)] * cos(phi_g)); // Верхняя левая
+            double ez_face_UR = -( - v_Pbx[idx_vface(i + 1, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j + 1)] * cos(phi_g)); // Верхняя правая
 
             // Хотим сносить в левый узел на грани
             double d_below = (ez_face_DL - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
@@ -1256,19 +1339,19 @@ __global__ void compute_cell_ez_and_slopes(
         if (i < N - 1)
         {
             double phi_g = PHI_CENTER(j);
-            double ez_face = -v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g);
+            double ez_face = -(- v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g));
             double SL = v_SL[idx_vface(i + 1, j)];
             double SR = v_SR[idx_vface(i + 1, j)];
 
             // Считаем Ez на горизонтальных гранях для этой и соседней ячейки (чтобы снести в узлы)
 
             phi_g = PHI_RIGHT(j - 1);
-            double ez_face_LD = -(h_Pbx[idx_hface(i, j)] * cos(phi_g) + h_Pby[idx_hface(i, j)] * sin(phi_g)); // Нижняя левая
-            double ez_face_RD = -(h_Pbx[idx_hface(i + 1, j)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j)] * sin(phi_g)); // Верхняя левая
+            double ez_face_LD = (h_Pbx[idx_hface(i, j)] * cos(phi_g) + h_Pby[idx_hface(i, j)] * sin(phi_g)); // Нижняя левая
+            double ez_face_RD = (h_Pbx[idx_hface(i + 1, j)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j)] * sin(phi_g)); // Верхняя левая
 
             phi_g = PHI_RIGHT(j);
-            double ez_face_LU = -(h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g)); // Нижняя правая
-            double ez_face_RU = -(h_Pbx[idx_hface(i + 1, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j + 1)] * sin(phi_g)); // Верхняя правая
+            double ez_face_LU = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g)); // Нижняя правая
+            double ez_face_RU = (h_Pbx[idx_hface(i + 1, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j + 1)] * sin(phi_g)); // Верхняя правая
 
             // Хотим сносить в верхний узел на грани
             double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
@@ -1282,15 +1365,75 @@ __global__ void compute_cell_ez_and_slopes(
         }
     }
 
-// Нужно написать ядро, обновляющее Bn на каждой грани
+    // Ядро, суммирующее Ez для каждого узла (в массив slot_h_from_left) - кроме самых правых узлов (для них надо снести с левого соседа)
+    __global__ void assemble_node_ez(
+        double* slot_h_from_left,
+        const double* slot_h_from_right,
+        const double* slot_v_from_below,
+        const double* slot_v_from_above)
+    {
+        int i = blockIdx.x * blockDim.x + threadIdx.x;
+        int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+        if (i > N || j > M) return;
+
+        int nd = idx_node(i, j);
+
+        if (i == 0 || j == 0 || j == M)
+        {
+            slot_h_from_left[nd] = 0.0;
+        }
+        else
+        {
+            slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
+                + slot_v_from_below[nd] + slot_v_from_above[nd]);
+        }
+    }
+
+    // Нужно написать ядро, обновляющее Bn на каждой грани
+__global__ void update_Bn_from_Ez(
+    const double* slot_h_from_left,   // (N+1) x (M+1)
+    double* h_Bn,            // N x (M+1), обновляем на месте
+    double* v_Bn,            // (N+1) x M, обновляем на месте
+    const double* dT)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (i >= N || j >= M) return;
+
+    // --- Верхняя h-грань этой ячейки: h-грань(i, j+1) ---
+    // Идёт от узла (i, j+1) [левый] до узла (i+1, j+1) [правый]
+    if(i < N - 1)
+    {
+        h_Bn[idx_hface(i, j + 1)] = h_Bn[idx_hface(i, j + 1)] - 
+            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i + 1, j + 1)]) / DR(i);
+    }
+
+    // --- Правая v-грань этой ячейки: v-грань(i+1, j) ---
+    // Идёт от узла (i+1, j) [нижний] до узла (i+1, j+1) [верхний]
+    if (i < N - 1)
+    {
+        v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
+            *dT * (slot_h_from_left[idx_node(i + 1, j + 1)] - slot_h_from_left[idx_node(i + 1, j)]) / (DPHI(j) * R_EDGE(i + 1));
+    }
+    else
+    {
+        // Это для самой правой грани сетки
+        v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
+            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i + 1));
+    }
+
+    // На самых нижних и самых левых гранях Ez = 0, поэтому bn обновлять не надо, он и так правильный
+}
 
 __global__ void update_cells(
     double* rho, double* Vx, double* Vy, double* Vz,
     double* Bx, double* By, double* Bz, const double* dVr,
     const double* h_Prho, const double* h_Pvx, const double* h_Pvy, const double* h_Pvz,
-    const double* h_Pbx, const double* h_Pby, const double* h_Pbz,
+    const double* h_Pbz, const double* h_Bn,
     const double* v_Prho, const double* v_Pvx, const double* v_Pvy, const double* v_Pvz,
-    const double* v_Pbx, const double* v_Pby, const double* v_Pbz,
+    const double* v_Pbz, const double* v_Bn,
     const double* dT)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1310,7 +1453,7 @@ __global__ void update_cells(
     double dV = CELL_AREA(i, j);
 
 
-    double S1, S2, S3, rho_2, Vx_2, Vy_2, Vz_2;
+    double S1, S2, S3, rho_2, Vx_2, Vy_2, Vz_2, Bz_2;
     S1 = DPHI(j) * R_EDGE(i + 1);
     S2 = DPHI(j) * R_EDGE(i);
     S3 = DR(i);
@@ -1437,6 +1580,55 @@ __global__ void update_cells(
         Vz[idx] = Vz_2;
     }
 
+    // Bz
+    if (true)
+    {
+        double P = 0.0;
+
+        P += v_Pbz[j * (N + 1) + (i + 1)] * S1;   // r+
+        P -= v_Pbz[j * (N + 1) + i] * S2;       // r-
+        P += h_Pbz[(j + 1) * N + i] * S3;  // phi+
+        P -= h_Pbz[j * N + i] * S3;      // phi-
+
+        Bz_2 = Bz_1 - dTime * P / dV;
+        Bz[idx] = Bz_2;
+    }
+
+    // Bx, By
+    // Делаем снос из Bn на гранях
+    {
+        double Br_center, Bphi_center;
+
+        // --- Br из вертикальных (левой и правой) граней ---
+        {
+            double Br_left = v_Bn[idx_vface(i, j)];
+            double Br_right = v_Bn[idx_vface(i + 1, j)];
+            double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
+            double d_left = R_CENTER(i, j) - R_EDGE(i);
+            Br_center = (Br_left * d_right + Br_right * d_left) / (d_left + d_right);
+        }
+
+        // --- Bphi из горизонтальных (нижней и верхней) граней ---
+        {
+            double Bphi_bottom = h_Bn[idx_hface(i, j)];
+            double Bphi_top = h_Bn[idx_hface(i, j + 1)];
+            double d_top = PHI_RIGHT(j) - PHI_CENTER(j);
+            double d_bottom = PHI_CENTER(j) - PHI_LEFT(j);
+            Bphi_center = (Bphi_bottom * d_top + Bphi_top * d_bottom) / (d_bottom + d_top);
+        }
+
+        double phi_c = PHI_CENTER(j);
+
+        Bx[idx] = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
+        By[idx] = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
+
+        //if (i == 1 && j == 100)
+        //{
+        //    printf("CELL 1;100 =: %E, %E, %E, %E \n ", Bx[idx], By[idx], Bx_1, By_1);
+        //}
+    }
+
+
     if (i == print_i && j == print_j)
     {
         printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
@@ -1498,11 +1690,13 @@ void test_polar_geometry(void)
 
 int main(void)
 {
-    bool read_setka = true;                     // Нужно ли считывать сетку с файла
+    bool read_setka = true;                     // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
+    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_1(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 35000 * 7; // 24000 * 60 * 9; // Число шагов
+    string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 650; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
+    double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
 
     const int cellCount = N * M;
@@ -1562,6 +1756,8 @@ int main(void)
         h_hFace.Pby = allocateHost<double>(hFaceCount);
         h_hFace.Pbz = allocateHost<double>(hFaceCount);
         h_hFace.Bn = allocateHost<double>(hFaceCount);
+        h_hFace.SL = allocateHost<double>(hFaceCount);
+        h_hFace.SR = allocateHost<double>(hFaceCount);
 
         d_hFace.Prho = allocateDevice<double>(hFaceCount);
         d_hFace.Pvx = allocateDevice<double>(hFaceCount);
@@ -1571,6 +1767,8 @@ int main(void)
         d_hFace.Pby = allocateDevice<double>(hFaceCount);
         d_hFace.Pbz = allocateDevice<double>(hFaceCount);
         d_hFace.Bn = allocateDevice<double>(hFaceCount);
+        d_hFace.SL = allocateDevice<double>(hFaceCount);
+        d_hFace.SR = allocateDevice<double>(hFaceCount);
 
         // --- Вертикальные грани (8 массивов по vFaceCount) ---
         h_vFace.Prho = allocateHost<double>(vFaceCount);
@@ -1581,6 +1779,8 @@ int main(void)
         h_vFace.Pby = allocateHost<double>(vFaceCount);
         h_vFace.Pbz = allocateHost<double>(vFaceCount);
         h_vFace.Bn = allocateHost<double>(vFaceCount);
+        h_vFace.SL = allocateHost<double>(vFaceCount);
+        h_vFace.SR = allocateHost<double>(vFaceCount);
 
         d_vFace.Prho = allocateDevice<double>(vFaceCount);
         d_vFace.Pvx = allocateDevice<double>(vFaceCount);
@@ -1590,10 +1790,21 @@ int main(void)
         d_vFace.Pby = allocateDevice<double>(vFaceCount);
         d_vFace.Pbz = allocateDevice<double>(vFaceCount);
         d_vFace.Bn = allocateDevice<double>(vFaceCount);
+        d_vFace.SL = allocateDevice<double>(vFaceCount);
+        d_vFace.SR = allocateDevice<double>(vFaceCount);
 
         // --- Узлы (1 массив по nodeCount) ---
         h_node.Ez = allocateHost<double>(nodeCount);
+        h_node.slot_h_from_left = allocateHost<double>(nodeCount);
+        h_node.slot_h_from_right = allocateHost<double>(nodeCount);
+        h_node.slot_v_from_below = allocateHost<double>(nodeCount);
+        h_node.slot_v_from_above = allocateHost<double>(nodeCount);
+
         d_node.Ez = allocateDevice<double>(nodeCount);
+        d_node.slot_h_from_left = allocateDevice<double>(nodeCount);
+        d_node.slot_h_from_right = allocateDevice<double>(nodeCount);
+        d_node.slot_v_from_below = allocateDevice<double>(nodeCount);
+        d_node.slot_v_from_above = allocateDevice<double>(nodeCount);
     }
 
 
@@ -1628,9 +1839,80 @@ int main(void)
         fin.close();
     }
 
+    if (read_setka_Bn)
+    {
+        std::ifstream fin("Bn_gran_" + name1, std::ios::binary);
+        for (int k = 0; k < hFaceCount; k++)
+        {
+            fin.read(reinterpret_cast<char*>(&h_hFace.Bn[k]), sizeof(double));
+            // Проверка на ошибки чтения
+            if (fin.fail())
+            {
+                std::cerr << "Error wsfewrfwfwefwefew  = " << k << std::endl;
+                fin.close();
+                exit(-1);
+            }
+        }
+        for (int k = 0; k < vFaceCount; k++)
+        {
+            fin.read(reinterpret_cast<char*>(&h_vFace.Bn[k]), sizeof(double));
+            // Проверка на ошибки чтения
+            if (fin.fail())
+            {
+                std::cerr << "Error wefwedwefafsaeffs  = " << k << std::endl;
+                fin.close();
+                exit(-1);
+            }
+        }
+        fin.close();
+    }
+    else
+    {
+        // Мы или считываем bn с файла, или заполняем вручную
+        for (int k = 0; k < K; k++)  // Заполняем начальные условия
+        {
+            int n = k % N;                                   // номер ячейки по x (от 0)
+            int m = (k - n) / N;                             // номер ячейки по y (от 0)
+            int i = n;
+            int j = m;
+            double r = R_CENTER(n, m);
+            double phi = PHI_CENTER(m);
+
+            double Bx, By, rg, phig;
+
+            // Верхняя грань
+            rg = r;
+            phig = PHI_RIGHT(j);
+            Bx = Bx_dipole(rg, phig);
+            By = By_dipole(rg, phig);
+            h_hFace.Bn[idx_hface(i, j + 1)] = -Bx * sin(phig) + By * cos(phig);
+
+            // Нижняя грань
+            rg = r;
+            phig = PHI_LEFT(j);
+            Bx = Bx_dipole(rg, phig);
+            By = By_dipole(rg, phig);
+            h_hFace.Bn[idx_hface(i, j)] = -Bx * sin(phig) + By * cos(phig);
+
+            // Правая грань
+            rg = R_EDGE(i + 1);
+            phig = phi;
+            Bx = Bx_dipole(rg, phig);
+            By = By_dipole(rg, phig);
+            h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
+
+            // Левая грань
+            rg = R_EDGE(i);
+            phig = phi;
+            Bx = Bx_dipole(rg, phig);
+            By = By_dipole(rg, phig);
+            h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
+        }
+    }
+
 
     // Заполнение массивов начальными условиями
-    if (false)
+    if (true)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -1648,12 +1930,16 @@ int main(void)
             double vr = 0.0009 + pow(max(1.0 - 1.0 / dist, 0.0), 0.71);
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
-            double B0 = Bo_init;
 
-            h_cell.rho[k] = rho;
-            h_cell.Vx[k] = vr * x / dist;
-            h_cell.Vy[k] = vr * y / dist;
-            h_cell.Vz[k] = vphi;
+            //h_cell.rho[k] = rho;
+            //h_cell.Vx[k] = vr * x / dist;
+            //h_cell.Vy[k] = vr * y / dist;
+            //h_cell.Vz[k] = vphi;
+
+
+            h_cell.Bx[k] = Bx_dipole(r, phi);
+            h_cell.By[k] = By_dipole(r, phi);
+            h_cell.Bz[k] = 0.0;
         }
     }
     
@@ -1697,6 +1983,14 @@ int main(void)
     // FREE_DEVICE(d_cell.rho);
 
     cudaEventRecord(start, 0);
+
+    dim3 block2(BX, BY);
+    dim3 grid2((N + 1 + block2.x - 1) / block2.x, (M + 1 + block2.y - 1) / block2.y);
+
+    dim3 block(BX, BY);
+    dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
+
+
     // Глобальный цикл
     for (int step_ = 1; step_ <= all_step; step_++)
     {
@@ -1705,19 +1999,19 @@ int main(void)
             cout << "Step = " << step_ << endl;
         }
 
-        cudaError_t err = cudaMemcpy(dT, &host_dT, sizeof(double), cudaMemcpyHostToDevice);
+        cudaError_t err = cudaMemcpy(dT, &host_dT_max, sizeof(double), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) { printf("error 543thrf3fwrf34r23d324r: %s\n", cudaGetErrorString(err));}
         cudaStatus = cudaDeviceSynchronize();
 
-        dim3 block(BX, BY);
-        dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
+
+        
         compute_fluxes << <grid, block >> > (
             d_cell.rho, d_cell.Vx, d_cell.Vy, d_cell.Vz,
             d_cell.Bx, d_cell.By, d_cell.Bz, d_cell.dVr,
             d_hFace.Prho, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
-            d_hFace.Pbx, d_hFace.Pby, d_hFace.Pbz, d_hFace.Bn,
+            d_hFace.Pbx, d_hFace.Pby, d_hFace.Pbz, d_hFace.Bn, d_hFace.SL, d_hFace.SR,
             d_vFace.Prho, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
-            d_vFace.Pbx, d_vFace.Pby, d_vFace.Pbz, d_vFace.Bn, dT);
+            d_vFace.Pbx, d_vFace.Pby, d_vFace.Pbz, d_vFace.Bn, d_vFace.SL, d_vFace.SR, dT);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
             fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -1729,27 +2023,70 @@ int main(void)
             exit(-1);
         }
 
-        //if (step_ % 1 == 0)
         if (true)
         {
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
+            cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 1000 == 0)
+            if (step_ % 50 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.09556 
                     << " hours,  dT =   " << std::scientific << host_dT * 1.09556 << endl;
             }
         }
 
+
+        compute_cell_ez_and_slopes << <grid, block >> > (d_cell.Vx, d_cell.Vy, d_cell.Bx, d_cell.By,
+            d_hFace.Pbx, d_hFace.Pby, d_hFace.SL, d_hFace.SR,
+            d_vFace.Pbx, d_vFace.Pby, d_vFace.SL, d_vFace.SR,
+            d_node.slot_h_from_left, d_node.slot_h_from_right, d_node.slot_v_from_below, d_node.slot_v_from_above);
+        cudaStatus = cudaGetLastError();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+            exit(-1);
+        }
         cudaStatus = cudaDeviceSynchronize();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+            exit(-1);
+        }
+
+        
+        
+        assemble_node_ez << <grid2, block2 >> > (d_node.slot_h_from_left, d_node.slot_h_from_right, d_node.slot_v_from_below, d_node.slot_v_from_above);
+        cudaStatus = cudaGetLastError();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+            exit(-1);
+        }
+        cudaStatus = cudaDeviceSynchronize();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+            exit(-1);
+        }
+
+
+
+        update_Bn_from_Ez << <grid, block >> > (d_node.slot_h_from_left, d_hFace.Bn, d_vFace.Bn, dT);
+        cudaStatus = cudaGetLastError();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+            exit(-1);
+        }
+        cudaStatus = cudaDeviceSynchronize();
+        if (cudaStatus != cudaSuccess) {
+            fprintf(stderr, "1  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+            exit(-1);
+        }
+
 
         update_cells << <grid, block >> > (
             d_cell.rho, d_cell.Vx, d_cell.Vy, d_cell.Vz,
             d_cell.Bx, d_cell.By, d_cell.Bz, d_cell.dVr,
             d_hFace.Prho, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
-            d_hFace.Pbx, d_hFace.Pby, d_hFace.Pbz,
+            d_hFace.Pbz, d_hFace.Bn,
             d_vFace.Prho, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
-            d_vFace.Pbx, d_vFace.Pby, d_vFace.Pbz, dT);
+            d_vFace.Pbz, d_vFace.Bn, dT);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
             fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -1777,6 +2114,9 @@ int main(void)
         copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
         copyFromDevice(h_cell.By, d_cell.By, cellCount);
         copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
+
+        copyFromDevice(h_hFace.Bn, d_hFace.Bn, hFaceCount);
+        copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
     }
 
     // Сохраняем результат в .bin
@@ -1795,6 +2135,17 @@ int main(void)
             bfout.write((char*)&h_cell.Bz[k], sizeof(double));
         }
         bfout.close();
+
+        bfout.open("Bn_gran_" + name2, ios::binary);
+        for (int k = 0; k < hFaceCount; k++)
+        {
+            bfout.write((char*)&h_hFace.Bn[k], sizeof(double));
+        }
+        for (int k = 0; k < vFaceCount; k++)
+        {
+            bfout.write((char*)&h_vFace.Bn[k], sizeof(double));
+        }
+        bfout.close();
     }
 
     // Печатаем результат 2D
@@ -1804,9 +2155,6 @@ int main(void)
         fout5.open("param_for_texplot_all.txt");
 
 
-
-        int nn = (int)((N + Nmin - 1) / Nmin);
-        int mm = (int)((M + Nmin - 1) / Nmin);
         fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\",  ZONE T = \"HP\", N = " << K //
             << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
@@ -1872,10 +2220,6 @@ int main(void)
         ofstream fout5;
         fout5.open("param_for_texplot_all.txt");
 
-
-
-        int nn = (int)((N + Nmin - 1) / Nmin);
-        int mm = (int)((M + Nmin - 1) / Nmin);
         fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\", N = " << K //
             << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
