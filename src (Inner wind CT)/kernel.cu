@@ -130,7 +130,7 @@
 
 #define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.001 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.1 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
@@ -923,7 +923,7 @@ __global__ void compute_fluxes(
 
                     //double Br = v_Bn[idx_vface(i, j)]; // Bo_init* cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
                     double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_Bx[i_l][j_l] * sin(phi_g);
-                    double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi_g) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi_g);
+                    double Br = 0.0;// kv(r)* (Br1 + Bo_init * cos(pi / 2.0 - phi_g) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi_g);
 
                     double Bphi1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
@@ -1056,16 +1056,16 @@ __global__ void compute_fluxes(
                 int idx_h = j * (N + 1) + (i + 1);
 
                 // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
-                {
-                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
-                    double Br = v_Bn[idx_h];
-                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
-                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+                //{
+                //    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                //    double Br = v_Bn[idx_h];
+                //    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                //    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
 
-                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
-                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
-                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
-                }
+                //    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                //    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                //    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                //}
 
                 // Добавляем фоновое дипольное поле
                 {
@@ -1372,12 +1372,12 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в левый узел на грани
             double d_below = (ez_face_DL - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             double d_above = (ez_face_UL - sh_Ez[il][jl + 1]);
-            slot_h_from_right[idx_node(i, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_h_from_right[idx_node(i, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в праввый узел на грани
             d_below = (ez_face_DR - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_UR - sh_Ez[il][jl + 1]);
-            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
         }
 
         // ---------------------------------------------------------------------
@@ -1403,22 +1403,22 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в верхний узел на грани
             double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             double d_above = (ez_face_RU - sh_Ez[il + 1][jl]);
-            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в нижний узел на грани
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
-            slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
         }
 
         // Левая v-грань у поверхности звезды
-        if (i == 0)
-        {
-            double phi_g = PHI_CENTER(j);
-            double ez_face = -(-v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g));
-            slot_v_from_below[idx_node(i, j + 1)] = ez_face;
-            slot_v_from_above[idx_node(i, j)] = ez_face;
-        }
+        //if (i == 0)
+        //{
+        //    double phi_g = PHI_CENTER(j);
+        //    double ez_face = -(-v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g));
+        //    slot_v_from_below[idx_node(i, j + 1)] = ez_face;
+        //    slot_v_from_above[idx_node(i, j)] = ez_face;
+        //}
 
 
     }
@@ -1437,14 +1437,14 @@ __global__ void compute_cell_ez_and_slopes(
 
         int nd = idx_node(i, j);
 
-        if (j == 0 || j == M)
+        if (i == 0 || j == 0 || j == M)
         {
             slot_h_from_left[nd] = 0.0;
         }
-        else if (i == 0)
-        {
-            slot_h_from_left[nd] = 0.5 * (slot_v_from_below[nd] + slot_v_from_above[nd]);
-        }
+        //else if (i == 0)
+        //{
+        //    slot_h_from_left[nd] = 0.5 * (slot_v_from_below[nd] + slot_v_from_above[nd]);
+        //}
         else
         {
             slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
@@ -1512,7 +1512,7 @@ __global__ void update_Bn_from_Ez(
     }
 
     // попробуем обновить Bn на поверхности звезды
-    if(i == 0)
+    if(false)//(i == 0)
     {
         v_Bn[idx_vface(i, j)] = v_Bn[idx_vface(i, j)] -
             *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i));
@@ -1795,7 +1795,7 @@ int main(void)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 15000; // 24000 * 60 * 9; // Число шагов
+    int all_step = 20000 * 3; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
