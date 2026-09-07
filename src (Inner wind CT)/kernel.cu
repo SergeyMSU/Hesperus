@@ -694,6 +694,15 @@ __global__ void compute_fluxes(
                     By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
                 }
 
+                // Добавляем фоновое дипольное поле
+                {
+                    Bx_L += Bx_dipole(r, phi_g);
+                    By_L += By_dipole(r, phi_g);
+
+                    Bx_R += Bx_dipole(r, phi_g);
+                    By_R += By_dipole(r, phi_g);
+                }
+
                 double PQ = 0.0;
                 double SL = 0.0, SR = 0.0;
                 double P[8];
@@ -837,6 +846,15 @@ __global__ void compute_fluxes(
                     By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
                 }
 
+                // Добавляем фоновое дипольное поле
+                {
+                    Bx_L += Bx_dipole(r, phi_g);
+                    By_L += By_dipole(r, phi_g);
+
+                    Bx_R += Bx_dipole(r, phi_g);
+                    By_R += By_dipole(r, phi_g);
+                }
+
                 double PQ = 0.0;
                 double SL = 0.0, SR = 0.0;
                 double P[8];
@@ -903,14 +921,17 @@ __global__ void compute_fluxes(
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
                     }*/
 
-                    double Br = v_Bn[idx_vface(i, j)]; // Bo_init* cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
+                    //double Br = v_Bn[idx_vface(i, j)]; // Bo_init* cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
+                    double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_Bx[i_l][j_l] * sin(phi_g);
+                    double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi_g) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi_g);
 
                     double Bphi1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
-                    double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r_g - r);
+                    double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r3 - r);
 
 
-                    Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
+                    //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
+
                     // Вот это условие я не уверен что нужно
                     /*if (fabs(Br) > 0.00001)
                     {
@@ -1044,6 +1065,15 @@ __global__ void compute_fluxes(
                     Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
                     Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
                     By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
+
+                // Добавляем фоновое дипольное поле
+                {
+                    Bx_L += Bx_dipole(r_g, phi_g);
+                    By_L += By_dipole(r_g, phi_g);
+
+                    Bx_R += Bx_dipole(r_g, phi_g);
+                    By_R += By_dipole(r_g, phi_g);
                 }
 
                 double PQ = 0.0;
@@ -1181,6 +1211,20 @@ __global__ void compute_fluxes(
                     By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
                 }
 
+                // Добавляем фоновое дипольное поле
+                {
+                    Bx_L += Bx_dipole(1.0, phi_g);
+                    By_L += By_dipole(1.0, phi_g);
+
+                    Bx_R += Bx_dipole(1.0, phi_g);
+                    By_R += By_dipole(1.0, phi_g);
+                }
+
+                /*if (i == 0 && (j == 128 || j == 127))
+                {
+                    printf("BB = %d, %lf, %E, %E, %E, %E\n", j, phi_g, Bx_L, By_L, Bx_R, By_R);
+                }*/
+
                 double PQ = 0.0;
                 double SL = 0.0, SR = 0.0;
                 double P[8];
@@ -1284,14 +1328,14 @@ __global__ void compute_cell_ez_and_slopes(
                 if (ig >= 0 && ig < N && jg >= 0 && jg < M)
                 {
                     ez = compute_Ez_cell(Vx[idx_cell(ig, jg)], Vy[idx_cell(ig, jg)],
-                        Bx[idx_cell(ig, jg)], By[idx_cell(ig, jg)]);
+                        Bx[idx_cell(ig, jg)] + Bx_dipole(R_CENTER(ig, jg), PHI_CENTER(jg)), By[idx_cell(ig, jg)] + By_dipole(R_CENTER(ig, jg), PHI_CENTER(jg)));
                 }
                 else
                 {
                     int ic = min(max(ig, 0), N - 1);
                     int jc = min(max(jg, 0), M - 1);
                     ez = compute_Ez_cell(Vx[idx_cell(ic, jc)], Vy[idx_cell(ic, jc)],
-                        Bx[idx_cell(ic, jc)], By[idx_cell(ic, jc)]);
+                        Bx[idx_cell(ic, jc)] + Bx_dipole(R_CENTER(ic, jc), PHI_CENTER(jc)), By[idx_cell(ic, jc)] + By_dipole(R_CENTER(ic, jc), PHI_CENTER(jc)));
                 }
                 sh_Ez[il][jl] = ez;
             }
@@ -1406,6 +1450,11 @@ __global__ void compute_cell_ez_and_slopes(
             slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
                 + slot_v_from_below[nd] + slot_v_from_above[nd]);
         }
+
+        /*if (i == 0 && j == 128)
+        {
+            printf("Ez = %d, %lf, %E, %E, %E\n", j, PHI_LEFT(j) * 180.0/pi, slot_h_from_left[nd], slot_v_from_below[nd], slot_v_from_above[nd]);
+        }*/
     }
 
     // Нужно написать ядро, обновляющее Bn на каждой грани
@@ -1504,6 +1553,9 @@ __global__ void update_cells(
     double r = R_CENTER(i, j);
     double x = r * cos(phi);
 
+    Bx_1 += Bx_dipole(r, phi);
+    By_1 += By_dipole(r, phi);
+
     double Fx = 0.0, Fy = 0.0;
 
     double dTime = *dT; // 1.0E-4; // *dT;
@@ -1564,6 +1616,7 @@ __global__ void update_cells(
         rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
         rho[idx] = rho_2;
     }
+
 
     // Vx
     
@@ -1666,6 +1719,11 @@ __global__ void update_cells(
         Bx[idx] = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
         By[idx] = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
 
+        /*if (i == 0 && (j == 128 || j == 127))
+        {
+            printf("BB = %d, %lf, %E, %E\n", j, phi, Bx[idx], By[idx]);
+        }*/
+
         //if (i == 1 && j == 100)
         //{
         //    printf("CELL 1;100 =: %E, %E, %E, %E \n ", Bx[idx], By[idx], Bx_1, By_1);
@@ -1737,7 +1795,7 @@ int main(void)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 20000; // 24000 * 60 * 9; // Число шагов
+    int all_step = 15000; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -1928,13 +1986,15 @@ int main(void)
             phig = PHI_RIGHT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j + 1)] = -Bx * sin(phig) + By * cos(phig);
+            h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
+            //h_hFace.Bn[idx_hface(i, j + 1)] = -Bx * sin(phig) + By * cos(phig);
 
             // Нижняя грань
             rg = r;
             phig = PHI_LEFT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
+            h_hFace.Bn[idx_hface(i, j)] = 0.0;
             h_hFace.Bn[idx_hface(i, j)] = -Bx * sin(phig) + By * cos(phig);
 
             // Правая грань
@@ -1942,14 +2002,16 @@ int main(void)
             phig = phi;
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
+            h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
+            //h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
 
             // Левая грань
             rg = R_EDGE(i);
             phig = phi;
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
+            h_vFace.Bn[idx_vface(i, j)] = 0.0;
+            //h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
         }
     }
 
@@ -1980,8 +2042,8 @@ int main(void)
             //h_cell.Vz[k] = vphi;
 
 
-            h_cell.Bx[k] = Bx_dipole(r, phi);
-            h_cell.By[k] = By_dipole(r, phi);
+            h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
+            h_cell.By[k] = 0.0;// By_dipole(r, phi);
             h_cell.Bz[k] = 0.0;
         }
     }
@@ -2213,8 +2275,8 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
-            double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
-            double by = h_cell.By[k];// +By_dipole(r, phi);
+            double bx = h_cell.Bx[k] + Bx_dipole(r, phi);
+            double by = h_cell.By[k] + By_dipole(r, phi);
 
 
             double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
