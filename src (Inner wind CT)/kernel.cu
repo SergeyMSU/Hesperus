@@ -903,16 +903,19 @@ __global__ void compute_fluxes(
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
                     }*/
 
-                    double Br = Bo_init * cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
+                    double Br = v_Bn[idx_vface(i, j)]; // Bo_init* cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
 
                     double Bphi1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
                     double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r_g - r);
 
-                    if (fabs(Br) > 0.00001)
+
+                    Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
+                    // Вот это условие я не уверен что нужно
+                    /*if (fabs(Br) > 0.00001)
                     {
                         Vphi = Vr * Bphi / Br;
-                    }
+                    }*/
 
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
@@ -1363,6 +1366,17 @@ __global__ void compute_cell_ez_and_slopes(
             d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
             slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
         }
+
+        // Левая v-грань у поверхности звезды
+        if (i == 0)
+        {
+            double phi_g = PHI_CENTER(j);
+            double ez_face = -(-v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g));
+            slot_v_from_below[idx_node(i, j + 1)] = ez_face;
+            slot_v_from_above[idx_node(i, j)] = ez_face;
+        }
+
+
     }
 
     // Ядро, суммирующее Ez для каждого узла (в массив slot_h_from_left) - кроме самых правых узлов (для них надо снести с левого соседа)
@@ -1379,9 +1393,13 @@ __global__ void compute_cell_ez_and_slopes(
 
         int nd = idx_node(i, j);
 
-        if (i == 0 || j == 0 || j == M)
+        if (j == 0 || j == M)
         {
             slot_h_from_left[nd] = 0.0;
+        }
+        else if (i == 0)
+        {
+            slot_h_from_left[nd] = 0.5 * (slot_v_from_below[nd] + slot_v_from_above[nd]);
         }
         else
         {
@@ -1406,16 +1424,36 @@ __global__ void update_Bn_from_Ez(
     // Идёт от узла (i, j+1) [левый] до узла (i+1, j+1) [правый]
     if(i < N - 1)
     {
-        h_Bn[idx_hface(i, j + 1)] = h_Bn[idx_hface(i, j + 1)] - 
-            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i + 1, j + 1)]) / DR(i);
+        double h_Bn_do = h_Bn[idx_hface(i, j + 1)];
+        double A1 = slot_h_from_left[idx_node(i + 1, j + 1)];
+        double A2 = slot_h_from_left[idx_node(i, j + 1)];
+        double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
+
+        h_Bn[idx_hface(i, j + 1)] = h_Bn_posle;
+
+        /*if (i == 1 && j == 100)
+        {
+            printf("h-gran: %E, %E, %E, %E, %E, %E,\n", h_Bn_do, h_Bn_posle, A1, A2, *dT, DR(i));
+        }*/
     }
 
     // --- Правая v-грань этой ячейки: v-грань(i+1, j) ---
     // Идёт от узла (i+1, j) [нижний] до узла (i+1, j+1) [верхний]
     if (i < N - 1)
     {
-        v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
-            *dT * (slot_h_from_left[idx_node(i + 1, j + 1)] - slot_h_from_left[idx_node(i + 1, j)]) / (DPHI(j) * R_EDGE(i + 1));
+        double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
+        double A1 = slot_h_from_left[idx_node(i + 1, j)];
+        double A2 = slot_h_from_left[idx_node(i + 1, j + 1)];
+        double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
+        v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
+
+        //v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
+        //    *dT * (slot_h_from_left[idx_node(i + 1, j + 1)] - slot_h_from_left[idx_node(i + 1, j)]) / (DPHI(j) * R_EDGE(i + 1));
+
+        /*if (i == 1 && j == 100)
+        {
+            printf("v-gran: %E, %E, %E, %E, %E, %E,\n", h_Bn_do, h_Bn_posle, A1, A2, *dT, (DPHI(j) * R_EDGE(i + 1)));
+        }*/
     }
     else
     {
@@ -1424,7 +1462,12 @@ __global__ void update_Bn_from_Ez(
             *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i + 1));
     }
 
-    // На самых нижних и самых левых гранях Ez = 0, поэтому bn обновлять не надо, он и так правильный
+    // попробуем обновить Bn на поверхности звезды
+    if(i == 0)
+    {
+        v_Bn[idx_vface(i, j)] = v_Bn[idx_vface(i, j)] -
+            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i));
+    }
 }
 
 __global__ void update_cells(
@@ -1596,6 +1639,7 @@ __global__ void update_cells(
 
     // Bx, By
     // Делаем снос из Bn на гранях
+
     {
         double Br_center, Bphi_center;
 
@@ -1687,14 +1731,13 @@ void test_polar_geometry(void)
 }
 
 
-
 int main(void)
 {
     bool read_setka = true;                     // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 650; // 24000 * 60 * 9; // Число шагов
+    int all_step = 20000; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2028,7 +2071,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 50 == 0)
+            if (step_ % 1000 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.09556 
                     << " hours,  dT =   " << std::scientific << host_dT * 1.09556 << endl;
@@ -2148,79 +2191,13 @@ int main(void)
         bfout.close();
     }
 
-    // Печатаем результат 2D
+    // Печатаем результат 2D  
     if (true)
     {
         ofstream fout5;
         fout5.open("param_for_texplot_all.txt");
 
-
-        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\",  ZONE T = \"HP\", N = " << K //
-            << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
-
-        for (int k = 0; k < K; k++)
-        {
-            int i = k % N;                                   // номер ячейки по x (от 0)
-            int j = (k - i) / N;                             // номер ячейки по y (от 0)
-            double r, phi;
-            phi = PHI_CENTER(j);
-            r = R_CENTER(i, j);
-            //r = R_CENTER(i);
-
-            double x, y;
-            x = r * cos(phi);
-            y = r * sin(phi);
-
-            double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
-            double by = h_cell.By[k];// +By_dipole(r, phi);
-
-
-            /*double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
-            if (host_s[k].x > 0.0)
-            {
-                Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
-                Temp = host_s[k].y / host_s[k].x;
-                if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
-                {
-                    Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                        sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
-                }
-            }
-
-            Max_alf = 0.0;*/
-
-            double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
-            double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
-            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
-            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
-
-            fout5 << x << " " << y << " " << h_cell.rho[k] <<//
-                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << endl;
-        }
-
-        for (int i = 0; i < N - 1; i++)
-        {
-            for (int j = 0; j < M - 1; j++)
-            {
-                int k1 = j * N + i;
-                int k2 = j * N + i + 1;
-                int k3 = (j + 1) * N + i + 1;
-                int k4 = (j + 1) * N + i;
-                fout5 << k1 + 1 << " " << k2 + 1 << " " << k3 + 1 << " " << k4 + 1 << endl;
-            }
-        }
-
-        fout5.close();
-    }
-
-    // Печатаем результат 1D по r    
-    if (true)
-    {
-        ofstream fout5;
-        fout5.open("param_for_texplot_all.txt");
-
-        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\", N = " << K //
+        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
             << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
         for (int k = 0; k < K; k++)
@@ -2253,7 +2230,7 @@ int main(void)
 
             fout5 << x << " " << y << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << endl;
         }
 
         for (int i = 0; i < N - 1; i++)
