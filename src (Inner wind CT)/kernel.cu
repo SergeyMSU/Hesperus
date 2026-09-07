@@ -130,7 +130,7 @@
 
 #define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.1 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
@@ -710,7 +710,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 1));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 0));
 
                 /*if (i == 3 && j == 3)
                 {
@@ -862,7 +862,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 1));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 0));
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -932,11 +932,16 @@ __global__ void compute_fluxes(
 
                     //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
 
-                    // Вот это условие я не уверен что нужно
-                    /*if (fabs(Br) > 0.00001)
+
+                    double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
+                    double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
+
+
+                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.00001)
                     {
-                        Vphi = Vr * Bphi / Br;
-                    }*/
+
+                        Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+                    }
 
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
@@ -984,9 +989,10 @@ __global__ void compute_fluxes(
                             dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
                             dVr[j * N + i] = dVr_;
 
-
-                            //double fline = F_line * sh_rho[i_l][j_l] * pow( min(fabs(dVr_), 1000.0) / sh_rho[i_l][j_l], alpha_line) / kv(r);
-                            //tmin = my_min(tmin, krit * h2 * max(fabs(dVr_), 0.001) / (alpha_line * fline));
+                            dVr_ = min(fabs(dVr_), 10.0);
+                            dVr_ = max(fabs(dVr_), 0.1);
+                            double fline = F_line * sh_rho[i_l][j_l] * pow(1.0 / sh_rho[i_l][j_l], alpha_line) / kv(r);
+                            tmin = my_min(tmin, krit * h2 * pow(dVr_, 1.0 - alpha_line) / (alpha_line * fline));
                         }
                         
 
@@ -1083,7 +1089,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 1));
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 0));
 
                 /*if (i == print_i && j == print_j)
                 {
@@ -1232,12 +1238,12 @@ __global__ void compute_fluxes(
 
                 double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 1);
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 0);
 
-                if (tmin_ < 1.0E-10)
-                {
-                    printf("tmin = 0;  %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, tmin_, Bx_L, By_L, Bz_L);
-                }
+                //if (tmin_ < 1.0E-10)
+                //{
+                //    printf("tmin = 0;  %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, tmin_, Bx_L, By_L, Bz_L);
+                //}
 
                 tmin = my_min(tmin, tmin_);
 
@@ -1568,7 +1574,10 @@ __global__ void update_cells(
 
         if (true)
         {
-            double dVrdr = dVr[idx];
+            double dVrdr = fabs(dVr[idx]);
+            if (dVrdr > 10.0) dVrdr = 10.0;
+            
+
             double Vr1 = Vx_1 * cos(phi) + Vy_1 * sin(phi);
 
             double sigma = fabs(dVrdr * r / Vr1) - 1.0; 
@@ -1587,8 +1596,17 @@ __global__ void update_cells(
                 }
             }
 
-            double fline = F_line * ff * rho_1 * pow(fabs(dVrdr) / rho_1, alpha_line) / kv(r);
+            double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVrdr), alpha_line) / kv(r);
+            if (fabs(fline) > 5.0)
+            {
+                fline = 0.0;
+            }
+            
             fr += fline;
+            if (fabs(Vr1) > 5.0)
+            {
+                fr = 0.0;
+            }
         }
 
 
@@ -1597,6 +1615,7 @@ __global__ void update_cells(
     }
 
     double ppp = 0.0;
+    bool bb = false;
     // Плотность
     if (true)
     {
@@ -1614,13 +1633,25 @@ __global__ void update_cells(
 
         ppp = P;
         rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
+        if (rho_2 < 1.0E-6)
+        {
+            rho_2 = 1.0E-6;
+            bb = true;
+        }
+
+        if (rho_2 > 30.0)
+        {
+            rho_2 = 30.0;
+            bb = true;
+        }
+
         rho[idx] = rho_2;
     }
 
 
     // Vx
     
-    if (true)
+    if (bb == false)
     {
         double P = 0.0;
 
@@ -1639,7 +1670,7 @@ __global__ void update_cells(
     }
 
     // Vy
-    if (true)
+    if (bb == false)
     {
         double P = 0.0;
 
@@ -1658,7 +1689,7 @@ __global__ void update_cells(
     }
 
     // Vz
-    if (true)
+    if (bb == false)
     {
         double P = 0.0;
 
@@ -1677,7 +1708,7 @@ __global__ void update_cells(
     }
 
     // Bz
-    if (true)
+    if (bb == false)
     {
         double P = 0.0;
 
@@ -1791,11 +1822,13 @@ void test_polar_geometry(void)
 
 int main(void)
 {
+    // "save_zOph_1(350x256).bin" - чисто газодинамическое решение без вращения
+
     bool read_setka = true;                     // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_2(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 20000 * 3; // 24000 * 60 * 9; // Число шагов
+    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    string name1 = "save_zOph_2(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_3(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 17000 * 2; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
