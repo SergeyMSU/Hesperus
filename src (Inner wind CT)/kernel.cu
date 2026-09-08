@@ -125,13 +125,13 @@
 
 #define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.067358)     // Коэффициент внутри line-driven силы
+#define F_line 0.06 // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.3) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.58554  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.266667)  // (0.266667)   //   Скорость вращения звезды
@@ -1836,14 +1836,14 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
         {
             fout5.open(to_string(num) + "_param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << time << endl;
         }
         else
         {
             fout5.open("param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
         }
 
@@ -1869,15 +1869,26 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
-            double Max = 0.0;
-            if (h_cell.rho[k] > 0.0)
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k])) > 0.00001)
             {
-                Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+                Mach_Alph = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k]))) * sqrt(4.0 * pi * h_cell.rho[k]) /
+                    sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k]));
             }
 
-            fout5 << x << " " << y << " " << h_cell.rho[k] <<//
+            if (sqrt(kv(h_cell.Bz[k])) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k]))) * sqrt(4.0 * pi * h_cell.rho[k]) /
+                    sqrt(kv(h_cell.Bz[k]));
+            }
+
+            fout5 << x << " " << y << " " << h_cell.rho[k] * 1.05 << " " << log10(h_cell.rho[k] * 1.05E-12) <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
+                " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
 
         for (int i = 0; i < N - 1; i++)
@@ -1905,9 +1916,9 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_3(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_4(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 17000 * 10; // 24000 * 60 * 9; // Число шагов
+    string name1 = "save_zOph_5(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_6(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 17000 * 60; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2088,6 +2099,7 @@ int main(void)
                 exit(-1);
             }
         }
+
         fin.close();
     }
     else
@@ -2327,7 +2339,7 @@ int main(void)
         }
 
 
-        if (host_all_T * 1.09556 > 0.5 * num_)
+        if (host_all_T * 1.09556 > 2.0 * num_)
         {
             copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
             copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
@@ -2349,14 +2361,35 @@ int main(void)
                 h_cell_phi_average.Bz[j] += h_cell.Bz[idx_cell(i, j)];
             }
 
-            //Print_results_2D(num_, host_all_T, h_cell);
+            Print_results_2D(num_, host_all_T, h_cell);
             num_++;
+
+            // Считаем расход (текущий)
+            if (true)
+            {
+                double Mas = 0.0;
+                for (int i = N - 1; i < N; i++)
+                {
+                    for (int j = 0; j < M - 1; j++)
+                    {
+                        double r = R_CENTER(i, j);
+                        double phi = PHI_CENTER(j);
+                        double x = r * cos(phi);
+                        int k = j * N + i;
+
+                        double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
+                        Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+                    }
+                }
+
+                cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+            }
         }
     }
 
+    // Надо усреднить по времени значения по углу:
     if (true)
     {
-        // Надо усреднить по времени значения по углу:
         for (int j = 0; j < M; j++)
         {
             h_cell_phi_average.rho[j] /= (num_ - 1);
@@ -2433,11 +2466,11 @@ int main(void)
 
     Print_results_2D(-1, 0.0, h_cell);
 
-    // Печатаем 1д файл по r
+    // Печатаем 1д файл по r экватор
     if (true)
     {
         ofstream fout1dr;
-        fout1dr.open("param_for_texplot_1d_r.txt");
+        fout1dr.open("param_for_texplot_1d_r_eqv.txt");
         fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 1; i++)
@@ -2475,11 +2508,53 @@ int main(void)
         fout1dr.close();
     }
 
-    // Печатаем 1д файл по phi  AVERAGE
+    // Печатаем 1д файл по r полюс
     if (true)
     {
         ofstream fout1dr;
-        fout1dr.open("param_for_texplot_1d_phi_average.txt");
+        fout1dr.open("param_for_texplot_1d_r_pole.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\"" << endl;
+
+        for (int i = 0; i < N - 1; i++)
+        {
+            int j = M - 1;
+            int k = j * N + i;
+            double r = R_CENTER(i, j);
+            //double r = R_CENTER(i);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
+            double by = h_cell.By[k];// +By_dipole(r, phi);
+
+
+            double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
+            double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0;
+            if (h_cell.rho[k] > 0.0)
+            {
+                Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+            }
+
+            fout1dr << r << " " << h_cell.rho[k] <<//
+                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
+        }
+
+        fout1dr.close();
+    }
+
+    // Печатаем 1д файл по phi
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_phi.txt");
         fout1dr << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",\"Mach_Alph\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
 
         for (int j = 0; j < M; j++)
@@ -2527,6 +2602,58 @@ int main(void)
         fout1dr.close();
     }
 
+    // Печатаем 1д файл по phi AVERAGE
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_phi_average.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",\"Mach_Alph\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
+
+        for (int j = 0; j < M; j++)
+        {
+            int i = N - 1;
+            int k = j * N + i;
+            double r = R_CENTER(i, j);
+            //double r = R_CENTER(i);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double bx = h_cell_phi_average.Bx[k];// +Bx_dipole(r, phi);
+            double by = h_cell_phi_average.By[k];// +By_dipole(r, phi);
+
+
+            double Vr = (h_cell_phi_average.Vx[k] * x + h_cell_phi_average.Vy[k] * y) / sqrt(x * x + y * y);
+            double Vthe = (h_cell_phi_average.Vx[k] * y - h_cell_phi_average.Vy[k] * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k])) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[k])) > 0.00001)
+            {
+                Mach_Alph = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[k]) /
+                    sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[k]));
+            }
+
+            if (sqrt(kv(h_cell_phi_average.Bz[k])) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[k]) /
+                    sqrt(kv(h_cell_phi_average.Bz[k]));
+            }
+
+            fout1dr << phi << " " << h_cell_phi_average.rho[k] <<//
+                " " << h_cell_phi_average.Vx[k] << " " << h_cell_phi_average.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell_phi_average.Vz[k] <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell_phi_average.Bz[k] << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+        }
+
+        fout1dr.close();
+    }
+
 
     // Считаем расход
     if (true)
@@ -2546,7 +2673,24 @@ int main(void)
             }
         }
 
-        cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+        cout << "Moment Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+
+        Mas = 0.0;
+        for (int i = N - 1; i < N; i++)
+        {
+            for (int j = 0; j < M - 1; j++)
+            {
+                double r = R_CENTER(i, j);
+                double phi = PHI_CENTER(j);
+                double x = r * cos(phi);
+                int k = j * N + i;
+
+                double Vr = h_cell_phi_average.Vx[k] * cos(phi) + h_cell_phi_average.Vy[k] * sin(phi);
+                Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell_phi_average.rho[k];
+            }
+        }
+
+        cout << "Average Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
     }
 
 
