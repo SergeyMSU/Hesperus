@@ -121,15 +121,15 @@
 
 #define const_p 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 0.45 // (0.220637)     // p = const_p * rho
+#define rho_in 0.5 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
 #define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line 0.06 // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_line  (0.08) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.3) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.55) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 #define Bo_init 0.58554  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
@@ -1916,9 +1916,9 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_5(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_6(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 17000 * 60; // 24000 * 60 * 9; // Число шагов
+    string name1 = "save_zOph_8(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_9(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 17000 * 60 * 3; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
