@@ -23,6 +23,7 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
+#define method_rieman (1)   // = 20
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -133,7 +134,7 @@
 #define Bo_init 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
+#define V_phi_init (0.266667)  // (0.266667)   //   Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -710,7 +711,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 0));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
 
                 /*if (i == 3 && j == 3)
                 {
@@ -862,7 +863,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, 0));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -912,8 +913,12 @@ __global__ void compute_fluxes(
                         double Vr1 = sh_Vx[i_l][j_l] * cos(phi_g) + sh_Vy[i_l][j_l] * sin(phi_g);
                         double Vr2 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
                         Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r3 - r);
+
+                        if (Vr > Vr1) Vr = Vr1;
+
                         if (Vr < 0.000001) Vr = Vr1;
                         if (Vr <= 0.0) Vr = 0.0;
+                        if (Vr > 5.0) Vr = 5.0;
                     }
 
                     /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
@@ -929,6 +934,8 @@ __global__ void compute_fluxes(
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
                     double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r3 - r);
 
+                    Bphi = Bphi1;  // Можно попробовать снести первым порядком
+
 
                     //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
 
@@ -937,7 +944,7 @@ __global__ void compute_fluxes(
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
 
-                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.00001)
+                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.001)
                     {
 
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
@@ -1089,7 +1096,7 @@ __global__ void compute_fluxes(
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 0));
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman));
 
                 /*if (i == print_i && j == print_j)
                 {
@@ -1238,7 +1245,7 @@ __global__ void compute_fluxes(
 
                 double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), 0);
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman);
 
                 //if (tmin_ < 1.0E-10)
                 //{
@@ -1597,13 +1604,13 @@ __global__ void update_cells(
             }
 
             double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVrdr), alpha_line) / kv(r);
-            if (fabs(fline) > 5.0)
+            if (fabs(fline) > 10.0)
             {
                 fline = 0.0;
             }
             
             fr += fline;
-            if (fabs(Vr1) > 5.0)
+            if (fabs(Vr1) > 5.0 || sqrt(kvv(Vx_1, Vy_1, Vz_1)) > 5.0)
             {
                 fr = 0.0;
             }
@@ -1819,16 +1826,88 @@ void test_polar_geometry(void)
     fout.close();
 }
 
+void Print_results_2D(int num, const double& time, CellVars& h_cell)
+{
+    // Печатаем результат 2D  
+    if (true)
+    {
+        ofstream fout5;
+        if (num >= 0)
+        {
+            fout5.open(to_string(num) + "_param_for_texplot_all.txt");
+
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
+                << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << time << endl;
+        }
+        else
+        {
+            fout5.open("param_for_texplot_all.txt");
+
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
+                << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
+        }
+
+        for (int k = 0; k < K; k++)
+        {
+            int i = k % N;                                   // номер ячейки по x (от 0)
+            int j = (k - i) / N;                             // номер ячейки по y (от 0)
+            double r, phi;
+            phi = PHI_CENTER(j);
+            r = R_CENTER(i, j);
+            //r = R_CENTER(i);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double bx = h_cell.Bx[k] + Bx_dipole(r, phi);
+            double by = h_cell.By[k] + By_dipole(r, phi);
+
+
+            double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
+            double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0;
+            if (h_cell.rho[k] > 0.0)
+            {
+                Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+            }
+
+            fout5 << x << " " << y << " " << h_cell.rho[k] <<//
+                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << endl;
+        }
+
+        for (int i = 0; i < N - 1; i++)
+        {
+            for (int j = 0; j < M - 1; j++)
+            {
+                int k1 = j * N + i;
+                int k2 = j * N + i + 1;
+                int k3 = (j + 1) * N + i + 1;
+                int k4 = (j + 1) * N + i;
+                fout5 << k1 + 1 << " " << k2 + 1 << " " << k3 + 1 << " " << k4 + 1 << endl;
+            }
+        }
+
+        fout5.close();
+    }
+
+}
 
 int main(void)
 {
     // "save_zOph_1(350x256).bin" - чисто газодинамическое решение без вращения
+    // "save_zOph_2(350x256).bin" - МГД решение (B0 = 0.45542) без вращения
+    // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
-    bool read_setka = true;                     // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
+    bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_2(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_3(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 17000 * 2; // 24000 * 60 * 9; // Число шагов
+    string name1 = "save_zOph_3(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_4(350x256).bin";   // Куда сохраняем сетку
+    int all_step = 17000 * 10; // 24000 * 60 * 9; // Число шагов
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -1857,6 +1936,8 @@ int main(void)
     NodeVars  d_node;
     double* dT;
 
+    CellVars  h_cell_phi_average;
+
     // Выделение памяти для всех массивов
     if (true)
     {
@@ -1869,6 +1950,15 @@ int main(void)
         h_cell.By = allocateHost<double>(cellCount);
         h_cell.Bz = allocateHost<double>(cellCount);
         h_cell.dVr = allocateHost<double>(cellCount);
+
+        h_cell_phi_average.rho = allocateHost<double>(M);
+        h_cell_phi_average.Vx = allocateHost<double>(M);
+        h_cell_phi_average.Vy = allocateHost<double>(M);
+        h_cell_phi_average.Vz = allocateHost<double>(M);
+        h_cell_phi_average.Bx = allocateHost<double>(M);
+        h_cell_phi_average.By = allocateHost<double>(M);
+        h_cell_phi_average.Bz = allocateHost<double>(M);
+        h_cell_phi_average.dVr = allocateHost<double>(M);
 
         d_cell.rho = allocateDevice<double>(cellCount);
         d_cell.Vx = allocateDevice<double>(cellCount);
@@ -2127,7 +2217,7 @@ int main(void)
 
     dim3 block(BX, BY);
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
-
+    int num_ = 1;
 
     // Глобальный цикл
     for (int step_ = 1; step_ <= all_step; step_++)
@@ -2235,6 +2325,48 @@ int main(void)
             fprintf(stderr, "1  cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
             exit(-1);
         }
+
+
+        if (host_all_T * 1.09556 > 0.5 * num_)
+        {
+            copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+            copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
+            copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
+            copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
+            copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
+            copyFromDevice(h_cell.By, d_cell.By, cellCount);
+            copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
+
+            for (int j = 0; j < M; j++)
+            {
+                int i = N - 1;
+                h_cell_phi_average.rho[j] += h_cell.rho[idx_cell(i, j)];
+                h_cell_phi_average.Vx[j] += h_cell.Vx[idx_cell(i, j)];
+                h_cell_phi_average.Vy[j] += h_cell.Vy[idx_cell(i, j)];
+                h_cell_phi_average.Vz[j] += h_cell.Vz[idx_cell(i, j)];
+                h_cell_phi_average.Bx[j] += h_cell.Bx[idx_cell(i, j)];
+                h_cell_phi_average.By[j] += h_cell.By[idx_cell(i, j)];
+                h_cell_phi_average.Bz[j] += h_cell.Bz[idx_cell(i, j)];
+            }
+
+            //Print_results_2D(num_, host_all_T, h_cell);
+            num_++;
+        }
+    }
+
+    if (true)
+    {
+        // Надо усреднить по времени значения по углу:
+        for (int j = 0; j < M; j++)
+        {
+            h_cell_phi_average.rho[j] /= (num_ - 1);
+            h_cell_phi_average.Vx[j] /= (num_ - 1);
+            h_cell_phi_average.Vy[j] /= (num_ - 1);
+            h_cell_phi_average.Vz[j] /= (num_ - 1);
+            h_cell_phi_average.Bx[j] /= (num_ - 1);
+            h_cell_phi_average.By[j] /= (num_ - 1);
+            h_cell_phi_average.Bz[j] /= (num_ - 1);
+        }
     }
 
     cudaEventRecord(stop, 0);
@@ -2284,64 +2416,22 @@ int main(void)
             bfout.write((char*)&h_vFace.Bn[k], sizeof(double));
         }
         bfout.close();
+
+        bfout.open("average_angle_" + name2, ios::binary);
+        for (int k = 0; k < M; k++)
+        {
+            bfout.write((char*)&h_cell_phi_average.rho[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.Vx[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.Vy[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.Vz[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.Bx[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.By[k], sizeof(double));
+            bfout.write((char*)&h_cell_phi_average.Bz[k], sizeof(double));
+        }
+        bfout.close();
     }
 
-    // Печатаем результат 2D  
-    if (true)
-    {
-        ofstream fout5;
-        fout5.open("param_for_texplot_all.txt");
-
-        fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\",  ZONE T = \"HP\", N = " << K //
-            << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
-
-        for (int k = 0; k < K; k++)
-        {
-            int i = k % N;                                   // номер ячейки по x (от 0)
-            int j = (k - i) / N;                             // номер ячейки по y (от 0)
-            double r, phi;
-            phi = PHI_CENTER(j);
-            r = R_CENTER(i, j);
-            //r = R_CENTER(i);
-
-            double x, y;
-            x = r * cos(phi);
-            y = r * sin(phi);
-
-            double bx = h_cell.Bx[k] + Bx_dipole(r, phi);
-            double by = h_cell.By[k] + By_dipole(r, phi);
-
-
-            double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
-            double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
-            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
-            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
-
-            double Max = 0.0;
-            if (h_cell.rho[k] > 0.0)
-            {
-                Max = sqrt(( kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
-            }
-
-            fout5 << x << " " << y << " " << h_cell.rho[k] <<//
-                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << endl;
-        }
-
-        for (int i = 0; i < N - 1; i++)
-        {
-            for (int j = 0; j < M - 1; j++)
-            {
-                int k1 = j * N + i;
-                int k2 = j * N + i + 1;
-                int k3 = (j + 1) * N + i + 1;
-                int k4 = (j + 1) * N + i;
-                fout5 << k1 + 1 << " " << k2 + 1 << " " << k3 + 1 << " " << k4 + 1 << endl;
-            }
-        }
-
-        fout5.close();
-    }
+    Print_results_2D(-1, 0.0, h_cell);
 
     // Печатаем 1д файл по r
     if (true)
@@ -2383,6 +2473,80 @@ int main(void)
         }
 
         fout1dr.close();
+    }
+
+    // Печатаем 1д файл по phi  AVERAGE
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_phi_average.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",\"Mach_Alph\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
+
+        for (int j = 0; j < M; j++)
+        {
+            int i = N - 1;
+            int k = j * N + i;
+            double r = R_CENTER(i, j);
+            //double r = R_CENTER(i);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
+            double by = h_cell.By[k];// +By_dipole(r, phi);
+
+
+            double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
+            double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k])) > 0.00001)
+            {
+                Mach_Alph = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k]))) * sqrt(4.0 * pi * h_cell.rho[k]) /
+                    sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k]));
+            }
+
+            if (sqrt(kv(h_cell.Bz[k])) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k]))) * sqrt(4.0 * pi * h_cell.rho[k]) /
+                    sqrt(kv(h_cell.Bz[k]));
+            }
+
+            fout1dr << phi << " " << h_cell.rho[k] <<//
+                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+        }
+
+        fout1dr.close();
+    }
+
+
+    // Считаем расход
+    if (true)
+    {
+        double Mas = 0.0;
+        for (int i = N - 1; i < N; i++)
+        {
+            for (int j = 0; j < M - 1; j++)
+            {
+                double r = R_CENTER(i, j);
+                double phi = PHI_CENTER(j);
+                double x = r * cos(phi);
+                int k = j * N + i;
+
+                double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
+                Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+            }
+        }
+
+        cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
     }
 
 
