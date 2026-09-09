@@ -125,11 +125,11 @@
 
 #define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.04) // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_line  (0.12) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.55) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.1) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 #define Bo_init 0.58554  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
@@ -1916,9 +1916,11 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_4(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_6(350x256).bin";   // Куда сохраняем сетку
-    int all_step = 17000 * 90; // 24000 * 60 * 9; // Число шагов
+    string name1 = "save_zOph_9(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_14(350x256).bin";   // Куда сохраняем сетку
+    bool save_setka = true;                      // Надо ли сохранять сетку?
+    int all_step = 17000 * 60; // 24000 * 60 * 9; // Число шагов
+    double period_print = 2.0; // С каким периодом выводим в часах
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2339,7 +2341,7 @@ int main(void)
         }
 
 
-        if (host_all_T * 1.09556 > 2.0 * num_)
+        if (host_all_T * 1.09556 > period_print * num_)
         {
             copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
             copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
@@ -2361,13 +2363,18 @@ int main(void)
                 h_cell_phi_average.Bz[j] += h_cell.Bz[idx_cell(i, j)];
             }
 
-            Print_results_2D(num_, host_all_T, h_cell);
+            if (period_print > 0.499)
+            {
+                // Если период маленький, то не надо слишком часто печатать 
+                Print_results_2D(num_, host_all_T, h_cell);
+            }
             num_++;
 
             // Считаем расход (текущий)
             if (true)
             {
                 double Mas = 0.0;
+                double Vel = 0.0;
                 for (int i = N - 1; i < N; i++)
                 {
                     for (int j = 0; j < M - 1; j++)
@@ -2378,11 +2385,13 @@ int main(void)
                         int k = j * N + i;
 
                         double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
+                        Vel += 0.5 * (Vr * sin(pi / 2.0 - phi)) * DPHI(j);
                         Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
                     }
                 }
 
                 cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+                cout << "Vr = " << Vel << endl;
             }
         }
     }
@@ -2423,7 +2432,7 @@ int main(void)
     }
 
     // Сохраняем результат в .bin
-    if (true)
+    if (save_setka)
     {
         ofstream bfout;
         bfout.open(name2, ios::binary);
@@ -2513,13 +2522,16 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r_pole.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"dVr_dr\", \"F_all\",  ZONE T = \"HP\"" << endl;
 
-        for (int i = 0; i < N - 1; i++)
+        for (int i = 0; i < N - 2; i++)
         {
             int j = M - 1;
             int k = j * N + i;
+            int k2 = k;
+            if (i < N - 2)k2 = j * N + i + 1;
             double r = R_CENTER(i, j);
+            double r2 = R_CENTER(i + 1, j);
             //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
 
@@ -2527,11 +2539,38 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
+
             double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
             double by = h_cell.By[k];// +By_dipole(r, phi);
 
 
             double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
+            double Vr2 = h_cell.Vx[k2] * cos(phi) + h_cell.Vy[k2] * sin(phi);
+
+            double dVr_dr = (Vr2 - Vr) / (r2 - r);
+            double F_all = 0.0;
+            double rho_1 = h_cell.rho[k];
+            // Вычисляем силу
+            if (true)
+            {
+                F_all = (F_grav + F_continuum) * rho_1 / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
+                double sigma = fabs(dVr_dr * r / Vr) - 1.0;
+                double muc = 1.0 - 1.0 / kv(r);
+
+                double ff = 1.0;
+
+                if (fabs(dVr_dr) > 0.00001)
+                {
+                    ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
+                        ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
+                }
+
+                double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVr_dr), alpha_line) / kv(r);
+
+                F_all += fline;
+            }
+
+
             double Vthe = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / sqrt(x * x + y * y);
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
@@ -2544,7 +2583,7 @@ int main(void)
 
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << dVr_dr << " " << F_all << endl;
         }
 
         fout1dr.close();
@@ -2612,7 +2651,7 @@ int main(void)
         for (int j = 0; j < M; j++)
         {
             int i = N - 1;
-            int k = j * N + i;
+            //int k = j * N + i;
             double r = R_CENTER(i, j);
             //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
@@ -2621,34 +2660,34 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
-            double bx = h_cell_phi_average.Bx[k];// +Bx_dipole(r, phi);
-            double by = h_cell_phi_average.By[k];// +By_dipole(r, phi);
+            double bx = h_cell_phi_average.Bx[j];// +Bx_dipole(r, phi);
+            double by = h_cell_phi_average.By[j];// +By_dipole(r, phi);
 
 
-            double Vr = (h_cell_phi_average.Vx[k] * x + h_cell_phi_average.Vy[k] * y) / sqrt(x * x + y * y);
-            double Vthe = (h_cell_phi_average.Vx[k] * y - h_cell_phi_average.Vy[k] * x) / sqrt(x * x + y * y);
+            double Vr = (h_cell_phi_average.Vx[j] * x + h_cell_phi_average.Vy[j] * y) / sqrt(x * x + y * y);
+            double Vthe = (h_cell_phi_average.Vx[j] * y - h_cell_phi_average.Vy[j] * x) / sqrt(x * x + y * y);
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
             double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
 
-            Max = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k])) / (ggg * const_p));
+            Max = sqrt((kv(h_cell_phi_average.Vx[j]) + kv(h_cell_phi_average.Vy[j]) + kv(h_cell_phi_average.Vz[j])) / (ggg * const_p));
 
-            if (sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[k])) > 0.00001)
+            if (sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[j])) > 0.00001)
             {
-                Mach_Alph = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[k]) /
-                    sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[k]));
+                Mach_Alph = sqrt((kv(h_cell_phi_average.Vx[j]) + kv(h_cell_phi_average.Vy[j]) + kv(h_cell_phi_average.Vz[j]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[j]) /
+                    sqrt(kv(bx) + kv(by) + kv(h_cell_phi_average.Bz[j]));
             }
 
-            if (sqrt(kv(h_cell_phi_average.Bz[k])) > 0.00001)
+            if (sqrt(kv(h_cell_phi_average.Bz[j])) > 0.00001)
             {
-                Mach_Alph_phi = sqrt((kv(h_cell_phi_average.Vx[k]) + kv(h_cell_phi_average.Vy[k]) + kv(h_cell_phi_average.Vz[k]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[k]) /
-                    sqrt(kv(h_cell_phi_average.Bz[k]));
+                Mach_Alph_phi = sqrt((kv(h_cell_phi_average.Vx[j]) + kv(h_cell_phi_average.Vy[j]) + kv(h_cell_phi_average.Vz[j]))) * sqrt(4.0 * pi * h_cell_phi_average.rho[j]) /
+                    sqrt(kv(h_cell_phi_average.Bz[j]));
             }
 
-            fout1dr << phi << " " << h_cell_phi_average.rho[k] <<//
-                " " << h_cell_phi_average.Vx[k] << " " << h_cell_phi_average.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell_phi_average.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell_phi_average.Bz[k] << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+            fout1dr << phi << " " << h_cell_phi_average.rho[j] <<//
+                " " << h_cell_phi_average.Vx[j] << " " << h_cell_phi_average.Vy[j] << " " << Vr << " " << Vthe << " " << h_cell_phi_average.Vz[j] <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell_phi_average.Bz[j] << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
 
         fout1dr.close();
@@ -2676,6 +2715,8 @@ int main(void)
         cout << "Moment Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
 
         Mas = 0.0;
+        double Vel = 0.0;
+        double Mas2 = 0.0;
         for (int i = N - 1; i < N; i++)
         {
             for (int j = 0; j < M - 1; j++)
@@ -2683,14 +2724,17 @@ int main(void)
                 double r = R_CENTER(i, j);
                 double phi = PHI_CENTER(j);
                 double x = r * cos(phi);
-                int k = j * N + i;
+                //int k = j * N + i;
 
-                double Vr = h_cell_phi_average.Vx[k] * cos(phi) + h_cell_phi_average.Vy[k] * sin(phi);
-                Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell_phi_average.rho[k];
+                double Vr = h_cell_phi_average.Vx[j] * cos(phi) + h_cell_phi_average.Vy[j] * sin(phi);
+                Vel += 0.5 * (Vr * sin(pi / 2.0 - phi)) * DPHI(j);
+                Mas2 += 2.0 * pi * r * r * (Vr * h_cell_phi_average.rho[j] * sin(pi / 2.0 - phi)) * DPHI(j);
+                Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell_phi_average.rho[j];
             }
         }
 
-        cout << "Average Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+        cout << "Average Mass rashod N = " << 87.4214 * Mas << "  or  " << 87.4214 * Mas2 << " x 10^-8 MasSolar / year" << endl;
+        cout << "Average Vr = " << Vel << endl;
     }
 
 
