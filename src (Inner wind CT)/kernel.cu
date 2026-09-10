@@ -119,20 +119,20 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.000186401  // (0.000447362)     // p = const_p * rho
+#define const_p 0.0006 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.5 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.22) //(-0.187168)           // Коэффициент перед силой гравитации
+#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.08) // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_line  (0.13) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.55) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.08) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 #define Bo_init 0.58554  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define phi_init 0.735183 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.266667)  // (0.266667)   //   Скорость вращения звезды
 
@@ -919,6 +919,8 @@ __global__ void compute_fluxes(
                         if (Vr < 0.000001) Vr = Vr1;
                         if (Vr <= 0.0) Vr = 0.0;
                         if (Vr > 5.0) Vr = 5.0;
+
+                        if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 2.0;   // Чтобы течение оставалось дозвуковым по r
                     }
 
                     /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
@@ -937,18 +939,17 @@ __global__ void compute_fluxes(
                     Bphi = Bphi1;  // Можно попробовать снести первым порядком
 
 
-                    //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
+                    //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);  // Снос мягкий
 
 
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
 
-                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.001)
+                    /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.001)
                     {
-
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }
+                    }*/
 
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
@@ -1836,14 +1837,14 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
         {
             fout5.open(to_string(num) + "_param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << time << endl;
         }
         else
         {
             fout5.open("param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
         }
 
@@ -1869,9 +1870,10 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
-            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+            double Max = 0.0, Max_R = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
 
             Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
+            Max_R = sqrt(kv(Vr) / (ggg * const_p));
 
             if (sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k])) > 0.00001)
             {
@@ -1888,7 +1890,7 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
             fout5 << x << " " << y << " " << h_cell.rho[k] * 1.05 << " " << log10(h_cell.rho[k] * 1.05E-12) <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
-                " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+                " " << Max_R << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
 
         for (int i = 0; i < N - 1; i++)
@@ -1916,11 +1918,11 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_5(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_19(350x256).bin";   // Куда сохраняем сетку
+    string name1 = "save_zOph_22(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_zOph_23(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 60; // 24000 * 60 * 9; // Число шагов
-    double period_print = 10.0; // С каким периодом выводим в часах
+    int all_step = 17000 * 60 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 5.0; // С каким периодом выводим в часах
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2154,7 +2156,7 @@ int main(void)
 
 
     // Заполнение массивов начальными условиями
-    if (true)
+    if (read_setka == false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -2179,9 +2181,9 @@ int main(void)
             //h_cell.Vz[k] = vphi;
 
 
-            h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
-            h_cell.By[k] = 0.0;// By_dipole(r, phi);
-            h_cell.Bz[k] = 0.0;
+            //h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
+            //h_cell.By[k] = 0.0;// By_dipole(r, phi);
+            //h_cell.Bz[k] = 0.0;
         }
     }
     
@@ -2374,6 +2376,7 @@ int main(void)
             if (true)
             {
                 double Mas = 0.0;
+                double Mas_without_phi = 0.0;
                 double Vel = 0.0;
                 for (int i = N - 1; i < N; i++)
                 {
@@ -2387,10 +2390,14 @@ int main(void)
                         double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
                         Vel += 0.5 * (Vr * sin(pi / 2.0 - phi)) * DPHI(j);
                         Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+                        if (fabs(phi) > pi / (200.0))
+                        {
+                            Mas_without_phi += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+                        }
                     }
                 }
 
-                cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+                cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year   or (10 degree out) " << 87.4214 * Mas_without_phi << endl;
                 cout << "Vr = " << Vel << endl;
             }
         }
@@ -2698,6 +2705,7 @@ int main(void)
     if (true)
     {
         double Mas = 0.0;
+        double Mas_without_phi = 0.0;
         for (int i = N - 1; i < N; i++)
         {
             for (int j = 0; j < M - 1; j++)
@@ -2709,10 +2717,16 @@ int main(void)
 
                 double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
                 Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+
+                if (fabs(phi) > pi / (36.0))
+                {
+                    Mas_without_phi += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
+                }
             }
         }
 
         cout << "Moment Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year" << endl;
+        cout << "Moment Mass rashod (without midel 10 degrees) N = " << 87.4214 * Mas_without_phi << " x 10^-8 MasSolar / year" << endl;
 
         Mas = 0.0;
         double Vel = 0.0;
