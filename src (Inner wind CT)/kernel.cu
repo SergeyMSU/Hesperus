@@ -1918,11 +1918,11 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_22(350x256).bin";   // Откуда скачиваем сетку
+    string name1 = "save_zOph_23(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_23(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 60 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 5.0; // С каким периодом выводим в часах
+    int all_step = 17000 * 10; // 24000 * 60 * 9; // Число шагов
+    double period_print = 0.1; // С каким периодом выводим в часах
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
