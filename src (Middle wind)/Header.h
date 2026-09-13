@@ -11,6 +11,7 @@
 #define gm ((g1/ga)/2.0)
 #define gga ga
 #define kv(x) ((x)*(x))
+#define pow2g(x) (pow(x, 2.0 * ggg))
 #define skk(u,v,w,bx,by,bz) ( (u)*(bx) + (v)*(by) + (w)*(bz) )
 #define kvv(x,y,z)  (kv(x) + kv(y) + kv(z))
 #define U8(ro, p, u, v, w, bx, by, bz)  ( (p) / (ggg - 1.0) + 0.5 * (ro) * kvv(u,v,w) + kvv(bx,by,bz) / 25.13274122871834590768)

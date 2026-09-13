@@ -2147,7 +2147,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
 
             rho_L = linear(r4, s_4.x * kv(r4), r, s_1.x * kv(r), r2, s_2.x * kv(r2), r_g) / kv(r_g);
             if (rho_L <= 0.0) rho_L = s_1.x;
-            p_L = linear(r4, s_4.y * kv(r4), r, s_1.y * kv(r), r2, s_2.y * kv(r2), r_g) / kv(r_g);
+            p_L = linear(r4, s_4.y * pow2g(r4), r, s_1.y * pow2g(r), r2, s_2.y * pow2g(r2), r_g) / pow2g(r_g);
             if (p_L <= 0.0) p_L = s_1.y;
             //p_L = const_p * rho_L;
 
@@ -2170,7 +2170,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
                 rho_R = linear(r, s_1.x * kv(r), r2, s_2.x * kv(r2), r21, s_21.x * kv(r21), r_g) / kv(r_g);
                 if (rho_R <= 0.0) rho_R = s_2.x;
 
-                p_R = linear(r, s_1.y * kv(r), r2, s_2.y * kv(r2), r21, s_21.y * kv(r21), r_g) / kv(r_g);
+                p_R = linear(r, s_1.y * pow2g(r), r2, s_2.y * pow2g(r2), r21, s_21.y * pow2g(r21), r_g) / pow2g(r_g);
                 if (p_R <= 0.0) p_R = s_2.y;
 
                 Vr21 = u_21.x * cos(phi21) + u_21.y * sin(phi21);
@@ -2189,7 +2189,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
             else
             {
                 rho_R = s_2.x * kv(r2 / r_g);
-                p_R = s_2.y * kv(r2 / r_g);
+                p_R = s_2.y * pow2g(r2 / r_g);
                 Vr_R = Vr2;
                 Vphi_R = Vphi2;
                 Br_R = Br2;
@@ -2294,7 +2294,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
             else
             {
                 rho_R = s_3.x * kv(r3 / r_g);
-                p_R = s_3.y * kv(r3 / r_g);
+                p_R = s_3.y * pow2g(r3 / r_g);
                 Vr_R = Vr3;
                 Vphi_R = Vphi3;
                 Br_R = Br3;
@@ -2360,7 +2360,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
 
             rho_L = linear(r2, s_2.x * kv(r2), r, s_1.x * kv(r), r4, s_4.x * kv(r4), r_g) / kv(r_g);
             if (rho_L <= 0.0) rho_L = s_1.x;
-            p_L = linear(r2, s_2.y * kv(r2), r, s_1.y * kv(r), r4, s_4.y * kv(r4), r_g) / kv(r_g);
+            p_L = linear(r2, s_2.y * pow2g(r2), r, s_1.y * pow2g(r), r4, s_4.y * pow2g(r4), r_g) / pow2g(r_g);
             if (p_L <= 0.0) p_L = s_1.y;
             //p_L = const_p * rho_L;
 
@@ -2382,7 +2382,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
                 rho_R = linear(r, s_1.x * kv(r), r4, s_4.x * kv(r4), r41, s_41.x * kv(r41), r_g) / kv(r_g);
                 if (rho_R <= 0.0) rho_R = s_4.x;
 
-                p_R = linear(r, s_1.y * kv(r), r4, s_4.y * kv(r4), r41, s_41.y * kv(r41), r_g) / kv(r_g);
+                p_R = linear(r, s_1.y * pow2g(r), r4, s_4.y * pow2g(r4), r41, s_41.y * pow2g(r41), r_g) / pow2g(r_g);
                 if (p_R <= 0.0) p_R = s_4.y;
 
                 Vr41 = u_41.x * cos(phi41) + u_41.y * sin(phi41);
@@ -2401,7 +2401,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
             else
             {
                 rho_R = s_4.x * kv(r4 / r_g);
-                p_R = s_4.y * kv(r4 / r_g);
+                p_R = s_4.y * pow2g(r4 / r_g);
                 Vr_R = Vr4;
                 Vphi_R = Vphi4;
                 Br_R = Br4;
@@ -2513,7 +2513,7 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
             else
             {
                 rho_R = s_5.x * kv(r5 / r_g);
-                p_R = s_5.y * kv(r5 / r_g);
+                p_R = s_5.y * pow2g(r5 / r_g);
                 Vr_R = Vr5;
                 Vphi_R = Vphi5;
                 Br_R = Br5;
@@ -2835,8 +2835,8 @@ int main(void)
     return 0;*/
 
     string name3 = "average_angle_save_zOph_23(350x256).bin";  // Откуда скачиваем граничные условия
-    string name1 = "save_zOph_middle_2(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_middle_3(350x256).bin";   // Куда сохраняем
+    string name1 = "save_zOph_middle_4(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_middle_4(350x256).bin";   // Куда сохраняем
     int all_step = 27000 * 10;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
@@ -3103,7 +3103,7 @@ int main(void)
             exit(-1);
         }
 
-        if ((i % (20000 * 10) == 0) && i > 0)
+        if ((i % (100000) == 0) && i > 0)
         {
             cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
             cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
@@ -3114,8 +3114,8 @@ int main(void)
             fout5.open(to_string(i) + "_param_for_texplot_all.txt");
 
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\", N = " << K //
-                << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << *host_TT * 1.09556 << endl;
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"log_Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf_phi\",\"T\",  ZONE T = \"HP\", N = " << K //
+                << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << *host_TT * 6.57333 << endl;
 
             cout << "Print file: TT = " << *host_TT << endl;
 
@@ -3141,10 +3141,10 @@ int main(void)
                 {
                     Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
                     Temp = host_s[k].y / host_s[k].x;
-                    if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
+                    if (sqrt((host_b[k].z * host_b[k].z)) > 0.00001)
                     {
                         Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                            sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
+                            sqrt((host_b[k].z * host_b[k].z));
                     }
                 }
 
@@ -3155,7 +3155,7 @@ int main(void)
                 double Br = (bx * x + by * y) / sqrt(x * x + y * y);
                 double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
-                fout5 << x << " " << y << " " << host_s[k].x << " " << host_s[k].y <<//
+                fout5 << x << " " << y << " " << host_s[k].x << " " << log10(host_s[k].x) << " " << host_s[k].y <<//
                     " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
                     " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
                     Max << " " << Max_alf << " " << Temp << endl;
