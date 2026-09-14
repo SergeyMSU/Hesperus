@@ -10,16 +10,19 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define N 700 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
 #define M 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define Rb (100.0)             // Внешний радиус сетки
+#define Rb (43000.0)             // Внешний радиус сетки   надо 43000   100
 #define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define print_i (34800)           // предполагаем, что M чётное
 #define print_j (254)           // предполагаем, что M чётное
+
+#define start_i (600)           // С какой ячейки сейчас считаем
+#define end_i (700)           // До какой ячейки считаем    0 - 272 - 393 - 510 - 620 - 699
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
 // 
@@ -109,7 +112,7 @@
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 0.45 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
+#define F_grav (0.0)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
 #define F_line (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
@@ -1897,6 +1900,11 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
     int n = index % N;                                   // номер ячейки по x (от 0)
     int m = (index - n) / N;                             // номер ячейки по y (от 0)
 
+    if (n < start_i || n > end_i)
+    {
+        return;
+    }
+
     double r = R_CENTER(n, m);
     //double r = R_CENTER(n);
     double phi = PHI_CENTER(m);
@@ -1975,6 +1983,17 @@ __global__ void add2_TVD(double3* gran_s, double3* gran_u, double3* gran_b, doub
         s_2 = s_1;
         u_2 = u_1;
         b_2 = b_1;
+
+        double Vr = u_1.x * cos(phi) + u_1.y * sin(phi);
+        if (Vr <= 0.0) // Отсос
+        {
+            Vr = 0.1;
+            double Vphi = u_1.x * sin(phi) + u_1.y * cos(phi);
+            u_2.x = (Vr * cos(phi) - Vphi * sin(phi));
+            u_2.y = (Vr * sin(phi) + Vphi * cos(phi));
+        }
+
+
 
         // Fildmeier
         //double Vphi = u_1.x * sin(phi) + u_1.y * cos(phi);
@@ -2835,9 +2854,9 @@ int main(void)
     return 0;*/
 
     string name3 = "average_angle_save_zOph_23(350x256).bin";  // Откуда скачиваем граничные условия
-    string name1 = "save_zOph_middle_4(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_middle_4(350x256).bin";   // Куда сохраняем
-    int all_step = 27000 * 10;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_zOph_middle_2(700x256).bin";   // Откуда скачиваем
+    string name2 = "save_zOph_middle_2(700x256).bin";   // Куда сохраняем
+    int all_step = 27000 * 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -2937,7 +2956,9 @@ int main(void)
             bfin.read((char*)&host_b[k].y, sizeof(host_b[k].y));
             bfin.read((char*)&host_b[k].z, sizeof(host_b[k].z));
 
-
+            host_s2[k] = host_s[k];
+            host_u2[k] = host_u[k];
+            host_b2[k] = host_b[k];
         }
         bfin.close();
     }
@@ -2998,10 +3019,15 @@ int main(void)
         {
             int n = k % N;                                   // номер ячейки по x (от 0)
             int m = (k - n) / N;                             // номер ячейки по y (от 0)
+
+            
+
             double r, phi;
             r = R_CENTER(n, m);
             //r = R_CENTER(n);
             phi = PHI_CENTER(m);
+
+            if (r < 20000.0) continue;
 
             double x = r * cos(phi);
             double y = r * sin(phi);
@@ -3413,7 +3439,7 @@ int main(void)
 
         for (int j = 0; j < M; j++)
         {
-            int i = N - 2;
+            int i = 620; // N - 2;
             int k = j * N + i;
             double r = R_CENTER(i, j);
             //double r = R_CENTER(i);
