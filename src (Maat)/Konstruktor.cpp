@@ -8,6 +8,30 @@
 
 #define geo  0.001
 
+
+#define qphi (1.02)              // можно настроить; при большом M брать близким к 1
+#define M_HALF (256 / 2)           // предполагаем, что M чЄтное
+
+// ћинимальный угловой шаг (у phi = 0)
+#define DPHI_MIN ((pi / 2.0) * (qphi - 1.0) / (pow(qphi, M_HALF) - 1.0))
+
+// Ўирина j-й угловой €чейки (j = 0..M-1)
+#define DPHI(j) ((j) < M_HALF ? \
+                 DPHI_MIN * pow(qphi, M_HALF - 1 - (j)) : \
+                 DPHI_MIN * pow(qphi, (j) - M_HALF))
+
+// ”глова€ граница с индексом k (k = 0..M)
+#define PHI_EDGE(k) ((k) <= M_HALF ? \
+                     (-(pi) / 2.0 + DPHI_MIN * (pow(qphi, M_HALF) - pow(qphi, M_HALF - (k))) / (qphi - 1.0)) : \
+                     (DPHI_MIN * (pow(qphi, (k) - M_HALF) - 1.0) / (qphi - 1.0)))
+
+// Ќижн€€ и верхн€€ границы j-й €чейки
+#define PHI_LEFT(j)  (PHI_EDGE(j))
+#define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+
+// ÷ентр j-й €чейки по углу (средний угол)
+#define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
+
 using namespace std;
 
 Konstruktor::Konstruktor(int a, int b, int c, double x1, double x2, double y1, double y2, double z1, double z2)
@@ -1587,6 +1611,32 @@ void Konstruktor::dekard_skorost(double x, double y, double z, double Vr, double
 	}
 }	
 
+
+// Ћинейна€ интерпол€ци€ массива arr длины M по углу phi.
+// ¬не диапазона Ч берЄм крайнее значение.
+double interp_phi(const double* phi_center_arr, const double* arr, double phi, const int& M)
+{
+	// «ажимаем на концах
+	if (phi <= phi_center_arr[0])       return arr[0];
+	if (phi >= phi_center_arr[M - 1])   return arr[M - 1];
+
+	// Ѕинарный поиск: ищем lo такое, что
+	// phi_center_arr[lo] <= phi < phi_center_arr[lo + 1]
+	int lo = 0, hi = M - 1;
+	while (hi - lo > 1) 
+	{
+		int mid = (lo + hi) >> 1;
+		if (phi_center_arr[mid] <= phi) lo = mid;
+		else                            hi = mid;
+	}
+
+	double p0 = phi_center_arr[lo];
+	double p1 = phi_center_arr[lo + 1];
+	double t = (phi - p0) / (p1 - p0);
+
+	return arr[lo] * (1.0 - t) + arr[lo + 1] * t;
+}
+
 void Konstruktor::filling(void)
 {
 
@@ -1596,17 +1646,56 @@ void Konstruktor::filling(void)
 	//double P_E = ro_E * V_E * V_E / (ggg * M_0 * M_0);   // ћах другой в давлении
 	//double B_E = sqrt(kk_)/(M_alf * rr_0);
 
-	double V_E = phi_0;
-	double ro_E = 1.0 / (phi_0 * phi_0 * ae1 * ae1); // MM / (4.0 * pi * V_E * rr_0 * rr_0);
-	double P_E = ro_E * V_E * V_E / (ggg * M_0 * M_0);   // ћах другой в давлении
-	double B_E = sqrt(4.0 * pi) / (M_alf * ae1);
+	// Ќадо считать граничные услови€ из программы middle wind
+	const int M = 256;
+
+	double s_x[M], s_y[M];
+	double u_x[M], u_y[M], u_z[M];
+	double b_x[M], b_y[M], b_z[M];
+
+	std::ifstream bfin2;
+	bfin2.open("phi_save_zOph_middle_2(700x256).bin", std::ios::binary);
+
+	double phi_dummy;
+	for (int j = 0; j < M; j++)
+	{
+		bfin2.read((char*)&phi_dummy, sizeof(double)); // phi Ч пропускаем
+		bfin2.read((char*)&s_x[j], sizeof(double));
+		bfin2.read((char*)&s_y[j], sizeof(double));
+		bfin2.read((char*)&u_x[j], sizeof(double));
+		bfin2.read((char*)&u_y[j], sizeof(double));
+		bfin2.read((char*)&u_z[j], sizeof(double));
+		bfin2.read((char*)&b_x[j], sizeof(double));
+		bfin2.read((char*)&b_y[j], sizeof(double));
+		bfin2.read((char*)&b_z[j], sizeof(double));
+
+		s_x[j] *= 1.8048E7;
+		s_y[j] *= 1.83789E11;
+		u_x[j] *= 100.913;
+		u_y[j] *= 100.913;
+		u_z[j] *= 100.913;
+		b_x[j] *= 428706.0;
+		b_y[j] *= 428706.0;
+		b_z[j] *= 428706.0;
+	}
+
+	bfin2.close();
+
+	// ћассив центров €чеек по phi Ч удобно посчитать один раз
+	static double phi_center_arr[M];
+	if (true) 
+	{
+		for (int j = 0; j < M; j++) phi_center_arr[j] = PHI_CENTER(j);
+	}
+
 
 	for (auto& i : this->all_Kyb)
 	{
 		double dist = sqrt(i->x * i->x + i->y * i->y + i->z * i->z);
-		//double dist2 = sqrt(kv(i->x + 0.8) + i->y * i->y + i->z * i->z);
-		//double dist3 = kv(i->x + 1.8)/kv(2.9) + kv(i->y)/kv(2.9)  + kv(i->z)/kv(2.9);
-		double dist3 = kv(i->x + 0.15) / kv(0.35) + kv(i->y) / kv(0.35) + kv(i->z) / kv(0.35);
+		double the = acos(i->z / dist);
+		double phi = (pi / 2.0 - the);
+		double R_gran_cond = 0.0508043;
+
 		if (dist < 0.00005)
 		{
 			i->ro = 0.0;
@@ -1619,22 +1708,43 @@ void Konstruktor::filling(void)
 			i->Bz = 0.0;
 			i->Q = 0.0;
 		}
-		else if (dist <= ddist * 1.3) //ddist * 1.0001) //(dist3 < 1.0001) // dist <= ddist * 1.0001)
+		else if (dist <= ddist * 2.0)
 		{
-			i->ro = ro_E * pow(ae1/dist, 2.0);
-			i->p = P_E * pow(ae1 / dist, 2.0 * ggg);
-			i->u = V_E * i->x / dist;
-			i->v = V_E * i->y / dist;
-			i->w = V_E * i->z / dist;
-			double BE = B_E / (dist / ae1);
-			double the = acos(i->z / dist);
-			double AA, BB, CC;
-			double BR = -B_E * kv((ae1 / dist)); 
-			this->dekard_skorost(i->x, i->y, i->z, BR, BE * sin(the), 0.0, AA, BB, CC);
-			i->Bx = AA;
-			i->By = BB;
-			i->Bz = CC;
+			i->ro = interp_phi(phi_center_arr, s_x, phi, M) * pow(R_gran_cond / dist, 2.0);
+			i->p = interp_phi(phi_center_arr, s_y, phi, M) * pow(R_gran_cond / dist, 2.0 * ggg);
+			i->u = interp_phi(phi_center_arr, u_x, phi, M);
+			i->v = interp_phi(phi_center_arr, u_y, phi, M);
+			i->w = interp_phi(phi_center_arr, u_z, phi, M);
+			i->Bx = interp_phi(phi_center_arr, b_x, phi, M);
+			i->By = interp_phi(phi_center_arr, b_y, phi, M);
+			i->Bz = interp_phi(phi_center_arr, b_z, phi, M);
 			i->Q = i->ro;
+
+			double Vx, Vy, Vz;
+			double Bx, By, Bz;
+			double phi_cilindr = atan2(i->y, i->x);
+			Vx = i->u * cos(phi_cilindr) - i->w * sin(phi_cilindr);
+			Vy = i->u * sin(phi_cilindr) + i->w * cos(phi_cilindr);
+			Vz = i->v;
+
+			i->u = Vx; i->v = Vy; i->w = Vz;
+
+			Bx = i->Bx * cos(phi_cilindr) - i->Bz * sin(phi_cilindr);
+			By = i->Bx * sin(phi_cilindr) + i->Bz * cos(phi_cilindr);
+			Bz = i->By;
+
+			i->Bx = Bx; i->By = By; i->Bz = Bz;
+
+			double VV = sqrt(kvv(i->u, i->v, i->w));
+			// i->u = VV * i->x / dist;
+			// i->v = VV * i->y / dist;
+			// i->w = VV * i->z / dist;
+
+			double Max = VV / sqrt(ggg * i->p / i->ro);
+			if (Max < 10.0)
+			{
+				i->p = kv(VV) * i->ro / (ggg * kv(10.0));
+			}
 		}
 		else
 		{
@@ -1990,7 +2100,7 @@ void Konstruktor::print_Tecplot_z_20(double z, double T, string nam, const doubl
 			//	" " << i->Bx << " " << i->By << " " << i->Bz << " " << sqrt(kvv(i->Bx, i->By, i->Bz)) << " " << Max << " " << Alf << " " << QQ << " " <<  sqrt(kv(i->jx) + kv(i->jy) + kv(i->jz)) << " " << i->jx << " " << i->jy << " " << i->jz << 
 			//	" " << Fmag_x << " " << Fmag_y << " " << Fmag_z << " " << sqrt(kvv(Fmag_x, Fmag_y, Fmag_z)) << endl;
 
-			fout << i->x / ae1 << " " << i->y / ae1 << " " << sqrt(i->x * i->x + i->z * i->z) << " " << i->ro << " " << i->p << " " //
+			fout << i->x << " " << i->y  << " " << sqrt(i->x * i->x + i->z * i->z) << " " << i->ro << " " << i->p << " " //
 				<< i->p + kvv(i->Bx, i->By, i->Bz) / cpi8 << " " << //
 				i->u << " " << i->v << " " << i->w << " " << sqrt(kvv(i->u, i->v, i->w)) << //
 				" " << i->Bx << " " << i->By << " " << i->Bz << " " << sqrt(kvv(i->Bx, i->By, i->Bz)) << " " << Max << " " << Alf << " " << QQ << endl;
@@ -2174,7 +2284,7 @@ void Konstruktor::print_Tecplot_y_20(double y, double T, string nam, const doubl
 				}
 			}
 
-			fout << i->x / ae1 << " " << i->z / ae1 << " " << sqrt(i->x * i->x + i->z * i->z) << " " << i->ro << " " << i->p << " " //
+			fout << i->x << " " << i->z << " " << sqrt(i->x * i->x + i->z * i->z) << " " << i->ro << " " << i->p << " " //
 				<< i->p + kvv(i->Bx, i->By, i->Bz) / cpi8 << " " << //
 				i->u << " " << i->v << " " << i->w << " " << sqrt(kvv(i->u, i->v, i->w)) << //
 				" " << i->Bx << " " << i->By << " " << i->Bz << " " << sqrt(kvv(i->Bx, i->By, i->Bz)) << " " << Max << " " << Alf << " " << QQ << endl;

@@ -1468,9 +1468,9 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i)
     *TT = *TT + *T_do;
     *T = 10000000;
     *i = *i + 1;
-    if (*i % 10000 == 0)
+    if (*i % 1000 == 0)
     {
-        printf("i = %d,  TT = %lf years,  dT = %lf hours \n", *i, *TT/0.00791429, *T_do / 9.03458E-7);
+        printf("i = %d,  TT = %lf years,  dT = %lf hours \n", *i, *TT * 9127.29, *T_do * 7.9955E7);
     }
     return;
 }
@@ -2477,22 +2477,22 @@ __global__ void Cuda_main_HLLDQ(int* NN, double* X, double* Y, double* Z, double
                     sks = 0.0;
                 }
                 
-                //double ww = w;
-                //if (ww < 0.0)
-                //{
-                //    ww = 0.0;
-                //}
+                double ww = w;
+                if (ww < 0.0)
+                {
+                    ww = 0.0;
+                }
 
                 Potok[8] = Potok[8] + sks * S;
                 if (!kor_Sol || metod <= 1 || metod == 3)
                 {
-                    //tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
-                    tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
+                    tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
+                    //tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
                 }
                 else
                 {
-                    //tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
-                    tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
+                    tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
+                    //tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
                 }
 
                 for (int k = 0; k < 8; k++)  // Суммируем все потоки в ячейке
@@ -2518,7 +2518,11 @@ __global__ void Cuda_main_HLLDQ(int* NN, double* X, double* Y, double* Z, double
                     sks = 0.0;
                 }
 
-                //double ww = 
+                double ww = w;
+                if (ww > 0.0)
+                {
+                    ww = 0.0;
+                }
 
                 su1 = u;
                 sv1 = v;
@@ -2537,13 +2541,13 @@ __global__ void Cuda_main_HLLDQ(int* NN, double* X, double* Y, double* Z, double
                 Potok[8] = Potok[8] + sks * S;
                 if (!kor_Sol || metod <= 1 || metod == 3)
                 {
-                    tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, -w, bx, by, bz, P, PQ, n1, n2, n3, dist, metod)); // Симметрия
+                    tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod)); // Симметрия
                     //tmin = min(tmin, HLLDQ_Alexashov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
                 }
                 else
                 {
                     //tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, roC, QC, pC, uC, vC, wC, bxC, byC, bzC, P, PQ, n1, n2, n3, dist, metod));
-                    tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, -w, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
+                    tmin = min(tmin, HLLDQ_Korolkov(ro, Q, p, u, v, w, bx, by, bz, ro, Q, p, u, v, ww, bx, by, bz, P, PQ, n1, n2, n3, dist, metod));
                 }
                 for (int k = 0; k < 8; k++)  // Суммируем все потоки в ячейке
                 {
@@ -6112,21 +6116,22 @@ cudaError_t addWithCuda()
 
 
     // Основа для полной геометрии
-    //Konstruktor K(32, 32, 32, -3000.0 * ae1, 3000.0 * ae1, -3000.0 * ae1, 3000.0 * ae1, -3000.0 * ae1, 3000.0 * ae1);
+    /*Konstruktor K(32, 32, 32, -5.0, 5.0, -5.0, 5.0, -5.0, 5.0);
 
-    //cout << "(1) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(-1800.0 * ae1, 1200.0 * ae1, -1800.0 * ae1, 1800.0 * ae1, -1800.0 * ae1, 1800.0 * ae1, 2);
-    //cout << "(2) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(-900.0 * ae1, 700.0 * ae1, -1200.0 * ae1, 1200.0 * ae1, -1200.0 * ae1, 1200.0 * ae1, 2);
-    //cout << "(3) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(-400.0 * ae1, 350.0 * ae1, -400.0 * ae1, 400.0 * ae1, -400.0 * ae1, 400.0 * ae1, 2);
-    //cout << "(4) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(-300.0 * ae1, 250.0 * ae1, -300.0 * ae1, 300.0 * ae1, -300.0 * ae1, 300.0 * ae1, 2);
-    //cout << "(5) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(0.0, 0.0, 0.0, 30.0 * ae1, 160.0 * ae1, 2, false);
-    //cout << "(6) All size = " << K.all_Kyb.size() << endl;
-    //K.Drobim(0.0, 0.0, 0.0, 20.0 * ae1, 100.0 * ae1, 2, false);
-    //cout << "All size = " << K.all_Kyb.size() << endl;
+    cout << "(1) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(-3.0, 3.0, -3.0, 3.0, -3.0, 3.0, 2);
+    cout << "(2) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, 2);
+    cout << "(3) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(-1.2, 1.2, -1.2, 1.2, -1.2, 1.2, 2);
+    cout << "(4) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, 2);
+    cout << "(5) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(0.0, 0.0, 0.0, 0.05, 0.2, 2, false);
+    cout << "(6) All size = " << K.all_Kyb.size() << endl;
+    K.Drobim(0.0, 0.0, 0.0, 0.05, 0.5, 2, false);
+    cout << "All size = " << K.all_Kyb.size() << endl;*/
+
 
     // Основа для половинной геометрии
 
@@ -6153,7 +6158,7 @@ cudaError_t addWithCuda()
     //Konstruktor K(100, 100, 160,   -3.06553, 3.06553, -3.06553, 3.06553,   0.0, 4.9048102);   // !!!!!!!!!!!!!!!!!!!!!!!
     //Konstruktor K("binary_Moscow_Boston_3-HLLD_TVD_2025.dat", true);
 
-    Konstruktor K("binary_Maat-HLLC-TVD-atoms-1.3.dat", true);
+    Konstruktor K("binary_Hesperus-HLL-1.1.dat", true);
 
     //cout << "(1) All size = " << K.all_Kyb.size() << endl;
     //K.Drobim(-500.0 * ae1, 450.0 * ae1, -500.0 * ae1, 500.0 * ae1, -500.0 * ae1, 500.0 * ae1, 2);
@@ -6181,7 +6186,7 @@ cudaError_t addWithCuda()
     // 
 
 
-    string nam = "Maat-HLLC-TVD-atoms-1.3";  // Имя для вывода файлов
+    string nam = "Hesperus-HLL-1.2";  // Имя для вывода файлов
     //string nam = "inst_N_16_MA_4_2025";  // Имя для вывода файлов
     //string nam = "inst_N_31movi_2024";  // Имя для вывода файлов
 
@@ -6317,11 +6322,8 @@ cudaError_t addWithCuda()
     //K.get_inner();   // Попытка считать граничные условия из 2Д задачи
 
     //K.filling();
-    //K.filling_mini();
-
-
-
-    K.filling_mini();
+    // 
+    //K.filling_mini(); // не настроено под этот проект
 
 
     cout << "Zapolnil" << endl;
@@ -6961,9 +6963,9 @@ cudaError_t addWithCuda()
     time(&start_time);
     //nam = "1.97";
     MMM = 0.0;
-    for (int i = 0; i < 0; i = i + 2)  // Сколько шагов по времени делаем?
+    for (int i = 0; i < 20000 * 6 * 6; i = i + 2)  // Сколько шагов по времени делаем?
     {
-        if (i % 10000 == 0)
+        if (i % 100000000 == 0)
         {
             cout << "from HOST HLLDQ " << i << endl;
         }
@@ -6971,7 +6973,7 @@ cudaError_t addWithCuda()
         Cuda_main_HLLDQ << <(int)(N / 256) + 1, 256 >> > (dev_N, dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
             dev_ro1, dev_ro2, dev_Q1, dev_Q2, dev_p1, dev_p2, dev_u1, dev_u2, dev_v1, dev_v2,//
             dev_w1, dev_w2, dev_bx1, dev_by1, dev_bz1, dev_bx2, dev_by2, dev_bz2,//
-            dev_sosed, dev_l, dev_r, dev_T, dev_T_do, i, MMM, true, true, 2);
+            dev_sosed, dev_l, dev_r, dev_T, dev_T_do, i, MMM, true, true, 1);
 
         cudaStatus = cudaDeviceSynchronize();
         if (cudaStatus != cudaSuccess) {
@@ -6989,7 +6991,7 @@ cudaError_t addWithCuda()
         Cuda_main_HLLDQ << <(int)(N / 256) + 1, 256 >> > (dev_N, dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
             dev_ro2, dev_ro1, dev_Q2, dev_Q1, dev_p2, dev_p1, dev_u2, dev_u1, dev_v2, dev_v1,//
             dev_w2, dev_w1, dev_bx2, dev_by2, dev_bz2, dev_bx1, dev_by1, dev_bz1,//
-            dev_sosed, dev_l, dev_r, dev_T, dev_T_do, i, MMM, true, true, 2);
+            dev_sosed, dev_l, dev_r, dev_T, dev_T_do, i, MMM, true, true, 1);
 
         cudaStatus = cudaDeviceSynchronize();
         if (cudaStatus != cudaSuccess) {
@@ -7342,7 +7344,7 @@ cudaError_t addWithCuda()
 
     // 19000 - это час для HLLC + TVD с тяжёлой сеткой на Nuclon
     // 13900 - это час для HLLC + TVD с тяжёлой сеткой на HSE
-    for (int i = 0; i < 65000 * 6 * 5; i = i + 2)  // Сколько шагов по времени делаем?
+    for (int i = 0; i < 0; i = i + 2)  // Сколько шагов по времени делаем?
     {
 
         if (i % 10000 == 0)
@@ -7783,588 +7785,3 @@ Error:
 
     return cudaStatus;
 }
-
-cudaError_t addWithCuda_G_D() // Газовая динамика
-{
-    Konstruktor K(400, 400, 400, -2.4, 2.4, -2.4, 2.4, -2.4, 2.4);
-    /*K.Drobim(-0.9, 0.9, -0.9, 0.9, -0.9, 0.9, 2);
-    cout << "0" << endl;
-    K.Drobim(-0.8, -0.1, -0.8, 0.8, -0.8, 0.8, 3);
-    cout << "1" << endl;
-    K.Drobim(0.1, 0.8, -0.8, 0.8, -0.8, 0.8, 3);
-    cout << "2" << endl;
-    K.Drobim(-0.1, 0.1, -0.8, -0.1, -0.8, 0.8, 3);
-    cout << "3" << endl;
-    K.Drobim(-0.1, 0.1, 0.1, 0.8, -0.8, 0.8, 3);
-    cout << "4" << endl;
-    K.Drobim(-0.1, 0.1, -0.1, 0.1, -0.8, -0.1, 3);
-    cout << "5" << endl;
-    K.Drobim(-0.1, 0.1, -0.1, 0.1, 0.1, 0.8, 3);
-    cout << "6" << endl;*/
-    /*cout << "0" << endl;
-    K.Drobim(0.05, 1.6, 3);
-    cout << "1" << endl;
-    K.Drobim(0.05, 1.2, 2);
-    cout << "2" << endl;
-    K.Drobim(0.6, 0.9, 2);
-    cout << "3" << endl;
-    K.Drobim(0.7, 0.8, 2);
-    cout << "4" << endl;*/
-
-    int N = K.all_Kyb.size();          // Число ячеек
-    int th = 256;
-    for (th = 256; th > 0; th--)
-    {
-        if (N % th == 0)
-        {
-            break;
-        }
-    }
-    cout << "All size = " << N << endl;
-    cout << "th = " << th << endl;
-    int nn = K.get_size_conektiv();    // Число связей (размер массива связей)
-    cout << "connect = " << nn << endl;
-    cout << "Sozdal" << endl;
-    K.filling_G_D();
-    cout << "Zapolnil" << endl;
-    cudaError_t cudaStatus;
-    int* host_sosed;
-    int* dev_sosed;
-    double* host_T, * host_T_do, * host_TT;
-    double* dev_T, * dev_T_do, * dev_TT;
-    int* host_i;
-    int* dev_i;
-
-    // Создаём массивы переменных\ячеек
-    int* dev_l, * dev_r;
-    double* dev_x, * dev_y, * dev_z;
-    double* dev_dx, * dev_dy, * dev_dz;
-    double* dev_ro1, * dev_p1, * dev_u1, * dev_v1, * dev_w1, * dev_ro2, * dev_p2, * dev_u2, * dev_v2, * dev_w2;
-    double* host_x, * host_y, * host_z;
-    double* host_dx, * host_dy, * host_dz;
-    double* host_ro1, * host_p1, * host_u1, * host_v1, * host_w1, * host_bx1, * host_by1, * host_bz1;
-    int* host_l, * host_r;
-
-    host_T = (double*)malloc(sizeof(double));
-    host_T_do = (double*)malloc(sizeof(double));
-    host_TT = (double*)malloc(sizeof(double));
-    host_i = (int*)malloc(sizeof(int));
-
-    host_x = new double[N];
-    host_y = new double[N];
-    host_z = new double[N];
-    host_dx = new double[N];
-    host_dy = new double[N];
-    host_dz = new double[N];
-    host_ro1 = new double[N];
-    host_p1 = new double[N];
-    host_u1 = new double[N];
-    host_v1 = new double[N];
-    host_w1 = new double[N];
-    host_bx1 = new double[N];
-    host_by1 = new double[N];
-    host_bz1 = new double[N];
-    /*host_ro2 = new double[N];
-    host_p2 = new double[N];
-    host_u2 = new double[N];
-    host_v2 = new double[N];
-    host_w2 = new double[N];*/
-    host_l = new int[N];
-    host_r = new int[N];
-
-    *host_T = 10000000.0;
-    *host_T_do = 0.00000001;
-    *host_TT = 0.0;
-    *host_i = 0;
-
-    //// Выбор на каком GPU работаем (для систем с несколькими GPU актуально)
-    //cudaStatus = cudaSetDevice(0);
-    //if (cudaStatus != cudaSuccess) {
-    //    fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-    //    goto Error;
-    //}
-
-    host_sosed = new int[nn];
-
-    // Заполнение массивов
-    int c = 0;
-    for (Kyb* & i : K.all_Kyb)
-    {
-        for (Kyb* & j : i->sosed)
-        {
-            host_sosed[c] = j->number;
-            c++;
-        }
-    }
-
-    int ll = 0;
-    int kkk = 0;
-    int gg = 1;
-    for (int i = 0; i < K.all_Kyb.size(); i++)
-    {
-        host_x[i] = K.all_Kyb[i]->x;
-        host_y[i] = K.all_Kyb[i]->y;
-        host_z[i] = K.all_Kyb[i]->z;
-        host_dx[i] = K.all_Kyb[i]->dx;
-        host_dy[i] = K.all_Kyb[i]->dy;
-        host_dz[i] = K.all_Kyb[i]->dz;
-        host_ro1[i] = K.all_Kyb[i]->ro;
-        host_p1[i] = K.all_Kyb[i]->p;
-        host_u1[i] = K.all_Kyb[i]->u;
-        host_v1[i] = K.all_Kyb[i]->v;
-        host_w1[i] = K.all_Kyb[i]->w;
-        host_bx1[i] = K.all_Kyb[i]->Bx;
-        host_by1[i] = K.all_Kyb[i]->By;
-        host_bz1[i] = K.all_Kyb[i]->Bz;
-        host_l[i] = ll;
-        host_r[i] = ll + K.all_Kyb[i]->sosed.size() - 1;
-        ll = ll + K.all_Kyb[i]->sosed.size();
-    }
-
-    cout << "Sozdal massivi Cuda" << endl;
-
-    cout << "Pamyat = " << (N * 11 * sizeof(double) + nn * sizeof(int)) / 1000000000.0 << endl;
-
-    if (true)
-    {
-
-        cudaStatus = cudaMalloc((void**)&dev_x, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 1!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_y, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 2!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_z, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 3!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_dx, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 4!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_dy, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 5!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_dz, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 6!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_ro1, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 7!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_ro2, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 8!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_p1, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 9!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_p2, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 10!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_u1, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 11!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_u2, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 12!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_v1, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 13!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_v2, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 14!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_w1, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 15!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_w2, N * sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 16!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_l, N * sizeof(int));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 17!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_r, N * sizeof(int));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 18!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_sosed, nn * sizeof(int));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 19!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_T, sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 20!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_T_do, sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 21!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_TT, sizeof(double));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 22!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMalloc((void**)&dev_i, sizeof(int));
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMalloc failed 23!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_sosed, host_sosed, nn * sizeof(int), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed -1 !");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_x, host_x, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 0!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_x, host_x, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 1!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_y, host_y, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 2!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_z, host_z, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 3!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_dx, host_dx, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 4!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_dy, host_dy, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 5!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_dz, host_dz, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 6!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_ro1, host_ro1, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 7!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_p1, host_p1, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 8!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_u1, host_u1, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 9!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_v1, host_v1, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 10!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_w1, host_w1, N * sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 11!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_l, host_l, N * sizeof(int), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 12!");
-            goto Error;
-        }
-        cudaStatus = cudaMemcpy(dev_r, host_r, N * sizeof(int), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 13!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_T, host_T, sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 14!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_TT, host_TT, sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 15!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_T_do, host_T_do, sizeof(double), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 16!");
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(dev_i, host_i, sizeof(int), cudaMemcpyHostToDevice);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed 17!");
-            goto Error;
-        }
-
-        // Check for any errors launching the kernel
-        cudaStatus = cudaGetLastError();
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-            goto Error;
-        }
-    }
-
-    //int kkk = 0;
-
-     while (*host_TT < 1.97)  // Сколько шагов по времени делаем?
-    //for (int ii = 0; ii < 1000; ii++)
-    {
-        // запускаем add() kernel на GPU, передавая параметры
-        Cuda_main_HLL << <N / th, th >> > (dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
-            dev_ro1, dev_ro2, dev_p1, dev_p2, dev_u1, dev_u2, dev_v1, dev_v2,//
-            dev_w1, dev_w2, dev_sosed, dev_l, dev_r, dev_T, dev_T_do);
-        cudaStatus = cudaDeviceSynchronize();
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 11111\n", cudaStatus);
-            goto Error;
-        }
-
-        funk_time << <1, 1 >> > (dev_T, dev_T_do, dev_TT, dev_i);
-        cudaStatus = cudaDeviceSynchronize();
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 222222\n", cudaStatus);
-            goto Error;
-        }
-
-        Cuda_main_HLL << <N / th, th >> > (dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
-            dev_ro2, dev_ro1, dev_p2, dev_p1, dev_u2, dev_u1, dev_v2, dev_v1,//
-            dev_w2, dev_w1, dev_sosed, dev_l, dev_r, dev_T, dev_T_do);
-        cudaStatus = cudaDeviceSynchronize();
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 333333\n", cudaStatus);
-            goto Error;
-        }
-
-        funk_time << <1, 1 >> > (dev_T, dev_T_do, dev_TT, dev_i);
-        cudaStatus = cudaDeviceSynchronize();
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 4444444\n", cudaStatus);
-            goto Error;
-        }
-
-        cudaStatus = cudaMemcpy(host_TT, dev_TT, sizeof(double), cudaMemcpyDeviceToHost);
-        if (cudaStatus != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy failed!  3452\n");
-            goto Error;
-        }
-    }
-
-     perekluch << <N / th, th >> > (dev_x, dev_y, dev_z, //
-         dev_ro1, dev_p1, dev_u1, dev_v1,//
-         dev_w1, dev_TT);
-
-     *host_TT = 0.0;
-
-     while (*host_TT < 0.394)  // Сколько шагов по времени делаем?
-    //for (int ii = 0; ii < 1000; ii++)
-     {
-         // запускаем add() kernel на GPU, передавая параметры
-         Cuda_main_HLL << <N / th, th >> > (dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
-             dev_ro1, dev_ro2, dev_p1, dev_p2, dev_u1, dev_u2, dev_v1, dev_v2,//
-             dev_w1, dev_w2, dev_sosed, dev_l, dev_r, dev_T, dev_T_do);
-         cudaStatus = cudaDeviceSynchronize();
-         if (cudaStatus != cudaSuccess) {
-             fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 11111\n", cudaStatus);
-             goto Error;
-         }
-
-         funk_time << <1, 1 >> > (dev_T, dev_T_do, dev_TT, dev_i);
-         cudaStatus = cudaDeviceSynchronize();
-         if (cudaStatus != cudaSuccess) {
-             fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 222222\n", cudaStatus);
-             goto Error;
-         }
-
-         Cuda_main_HLL << <N / th, th >> > (dev_x, dev_y, dev_z, dev_dx, dev_dy, dev_dz,//
-             dev_ro2, dev_ro1, dev_p2, dev_p1, dev_u2, dev_u1, dev_v2, dev_v1,//
-             dev_w2, dev_w1, dev_sosed, dev_l, dev_r, dev_T, dev_T_do);
-         cudaStatus = cudaDeviceSynchronize();
-         if (cudaStatus != cudaSuccess) {
-             fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 333333\n", cudaStatus);
-             goto Error;
-         }
-
-         funk_time << <1, 1 >> > (dev_T, dev_T_do, dev_TT, dev_i);
-         cudaStatus = cudaDeviceSynchronize();
-         if (cudaStatus != cudaSuccess) {
-             fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! 4444444\n", cudaStatus);
-             goto Error;
-         }
-
-         cudaStatus = cudaMemcpy(host_TT, dev_TT, sizeof(double), cudaMemcpyDeviceToHost);
-         if (cudaStatus != cudaSuccess) {
-             fprintf(stderr, "cudaMemcpy failed!  3452\n");
-             goto Error;
-         }
-
-         if (*host_TT > 0.03 * gg)
-         {
-             gg++;
-             cudaStatus = cudaMemcpy(host_ro1, dev_ro1, N * sizeof(double), cudaMemcpyDeviceToHost);
-             if (cudaStatus != cudaSuccess) {
-                 fprintf(stderr, "cudaMemcpy failed!  3452\n");
-                 goto Error;
-             }
-             cudaStatus = cudaMemcpy(host_p1, dev_p1, N * sizeof(double), cudaMemcpyDeviceToHost);
-             if (cudaStatus != cudaSuccess) {
-                 fprintf(stderr, "cudaMemcpy failed!  3452\n");
-                 goto Error;
-             }
-             cudaStatus = cudaMemcpy(host_u1, dev_u1, N * sizeof(double), cudaMemcpyDeviceToHost);
-             if (cudaStatus != cudaSuccess) {
-                 fprintf(stderr, "cudaMemcpy failed!  3452\n");
-                 goto Error;
-             }
-             cudaStatus = cudaMemcpy(host_v1, dev_v1, N * sizeof(double), cudaMemcpyDeviceToHost);
-             if (cudaStatus != cudaSuccess) {
-                 fprintf(stderr, "cudaMemcpy failed!  3452\n");
-                 goto Error;
-             }
-             cudaStatus = cudaMemcpy(host_w1, dev_w1, N * sizeof(double), cudaMemcpyDeviceToHost);
-             if (cudaStatus != cudaSuccess) {
-                 fprintf(stderr, "cudaMemcpy failed!  3452\n");
-                 goto Error;
-             }
-             K.read_Cuda_massiv(host_ro1, host_p1, host_u1, host_v1, host_w1, host_bx1, host_by1, host_bz1, host_bz1);
-             K.print_Tecplot_z(0.0, *host_TT);
-             K.print_Tecplot_x(0.0, *host_TT);
-             K.print_Tecplot_y(0.0, *host_TT);
-         }
-     }
-
-    // cudaDeviceSynchronize ожидает завершения работы ядра и возвращает
-    // любые ошибки, полученные в процессе выполнения
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel! dffddff\n", cudaStatus);
-        goto Error;
-    }
-
-    // Копируем обратно на Хост
-    cudaStatus = cudaMemcpy(host_ro1, dev_ro1, N * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!  3452\n");
-        goto Error;
-    }
-    cudaStatus = cudaMemcpy(host_p1, dev_p1, N * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!  3452\n");
-        goto Error;
-    }
-    cudaStatus = cudaMemcpy(host_u1, dev_u1, N * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!  3452\n");
-        goto Error;
-    }
-    cudaStatus = cudaMemcpy(host_v1, dev_v1, N * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!  3452\n");
-        goto Error;
-    }
-    cudaStatus = cudaMemcpy(host_w1, dev_w1, N * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!  3452\n");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_sosed);
-    cudaFree(dev_ro1);
-    cudaFree(dev_ro2);
-    cudaFree(dev_p1);
-    cudaFree(dev_p2);
-    cudaFree(dev_u1);
-    cudaFree(dev_u2);
-    cudaFree(dev_v1);
-    cudaFree(dev_v2);
-    cudaFree(dev_w1);
-    cudaFree(dev_w2);
-    cudaFree(dev_T);
-    cudaFree(dev_i);
-    cudaFree(dev_T_do);
-    cudaFree(dev_TT);
-
-    K.read_Cuda_massiv(host_ro1, host_p1, host_u1, host_v1, host_w1, host_bx1, host_by1, host_bz1, host_bz1);
-    K.print_Tecplot_z(0.0, *host_TT);
-    K.print_Tecplot_x(0.0, *host_TT);
-    K.print_Tecplot_y(0.0, *host_TT);
-    /*K.print_Tecplot(150.0);
-    K.print_Tecplot(240.0);
-    K.print_Tecplot(320.0);*/
-    K.save_Setka();
-
-    return cudaStatus;
-}
-

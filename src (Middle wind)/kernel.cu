@@ -2856,7 +2856,7 @@ int main(void)
     string name3 = "average_angle_save_zOph_23(350x256).bin";  // Откуда скачиваем граничные условия
     string name1 = "save_zOph_middle_2(700x256).bin";   // Откуда скачиваем
     string name2 = "save_zOph_middle_2(700x256).bin";   // Куда сохраняем
-    int all_step = 27000 * 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    int all_step = 27000 * 0;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3245,8 +3245,9 @@ int main(void)
     fout5.open("param_for_texplot_all.txt");
 
 
-    ofstream bfout;
+    ofstream bfout, bfout2;
     bfout.open(name2, ios::binary);
+    bfout2.open("phi_" + name2, ios::binary);
 
 
     int nn = (int)((N + Nmin - 1) / Nmin);
@@ -3442,8 +3443,26 @@ int main(void)
             int i = 620; // N - 2;
             int k = j * N + i;
             double r = R_CENTER(i, j);
+
+            if (j == 0)
+            {
+                cout << "Print 1d phi for r = " << r << endl;
+            }
+
+
+
             //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
+
+            bfout2.write((char*)&phi, sizeof(double));
+            bfout2.write((char*)&host_s[k].x, sizeof(double));
+            bfout2.write((char*)&host_s[k].y, sizeof(double));
+            bfout2.write((char*)&host_u[k].x, sizeof(double));
+            bfout2.write((char*)&host_u[k].y, sizeof(double));
+            bfout2.write((char*)&host_u[k].z, sizeof(double));
+            bfout2.write((char*)&host_b[k].x, sizeof(double));
+            bfout2.write((char*)&host_b[k].y, sizeof(double));
+            bfout2.write((char*)&host_b[k].z, sizeof(double));
 
             double x, y;
             x = r * cos(phi);
@@ -3477,6 +3496,8 @@ int main(void)
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
                 Max << " " << Max_alf << " " << Temp << endl;
         }
+
+        bfout2.close();
 
         fout1dphi.close();
     }
