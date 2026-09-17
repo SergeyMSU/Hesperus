@@ -1921,8 +1921,8 @@ int main(void)
     string name1 = "save_zOph_28(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_zOph_28(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 50; // 24000 * 60 * 9; // Число шагов
-    double period_print = 1.0; // С каким периодом выводим в часах
+    int all_step = 17000 * 10; // 24000 * 60 * 9; // Число шагов
+    double period_print = 0.025; // С каким периодом выводим в часах
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
