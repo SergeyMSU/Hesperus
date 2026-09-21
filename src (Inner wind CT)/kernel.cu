@@ -131,8 +131,9 @@
 
 #define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.0 // 0.0545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-// #define phi_init 1.33888 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+// 0.00586533     0.0545476    0.0967779    0.173027
+#define Bo_init 0.173027  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 1.05149 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
@@ -545,7 +546,6 @@ __global__ void compute_fluxes(
     }
     __syncthreads();
 
-
     double tmin = 1.0E30;
 
 
@@ -579,6 +579,7 @@ __global__ void compute_fluxes(
 
                 if (j == M - 1)
                 {
+                    phi_g = pi / 2.0;
                     phi2 = pi - phi1;
                     phi4 = pi - phi3;
                 }
@@ -709,6 +710,7 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
+
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
@@ -718,10 +720,10 @@ __global__ void compute_fluxes(
                     printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
                 }*/
 
-                if (fabs(P[4]) > 0.00000001 || fabs(P[5]) > 0.00000001 || fabs(P[6]) > 0.00000001 || fabs(Bx_L) > 0.00000001 || fabs(Bx_R) > 0.00000001)
-                {
-                    printf("ERROR B != 0  =  %E, %E, %E, \n", P[4], Bx_L, Bx_R);
-                }
+                //if (fabs(P[4]) > 0.00000001 || fabs(P[5]) > 0.00000001 || fabs(P[6]) > 0.00000001 || fabs(Bx_L) > 0.00000001 || fabs(Bx_R) > 0.00000001)
+                //{
+                //    printf("ERROR B != 0  =  %E, %E, %E, \n", P[4], Bx_L, Bx_R);
+                //}
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -928,10 +930,6 @@ __global__ void compute_fluxes(
                         if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 2.0;   // Чтобы течение оставалось дозвуковым по r
                     }
 
-                    /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
-                    {
-                        Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }*/
 
                     //double Br = v_Bn[idx_vface(i, j)]; // Bo_init* cos(pi / 2.0 - phi_g);   // Задаём просто Bn - дипольный
                     double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_Bx[i_l][j_l] * sin(phi_g);
@@ -950,11 +948,11 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
-
-                    /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.001)
+                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
                     {
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }*/
+                    }
+
 
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
@@ -1647,9 +1645,16 @@ __global__ void update_cells(
 
         ppp = P;
         rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
-        if (rho_2 < 1.0E-6)
+        if (rho_2 < 1.0E-7)
         {
-            rho_2 = 1.0E-6;
+            rho_2 = 1.0E-7;
+            bb = true;
+        }
+
+        // Нижнее ограничение на плотность (в петлях в какой-то момент плотность может стать очень маленькой, а альфвеновская скорость приближается к скорости света)
+        if (rho_2 < 1.0E-4 && r < 1.5)
+        {
+            rho_2 = 1.0E-4;
             bb = true;
         }
 
@@ -1764,10 +1769,10 @@ __global__ void update_cells(
         Bx[idx] = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
         By[idx] = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
 
-        if (fabs(Bx[idx]) > 0.0000001)
-        {
-            printf("ERROR BB = %d, %lf, %E, %E\n", idx, phi, Bx[idx], By[idx]);
-        }
+        //if (fabs(Bx[idx]) > 0.0000001)
+        //{
+        //    printf("ERROR BB = %d, %lf, %E, %E\n", idx, phi, Bx[idx], By[idx]);
+        //}
 
         /*if (i == 0 && (j == 128 || j == 127))
         {
@@ -1933,10 +1938,12 @@ int main(void)
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_paper-1_2(350x256).bin";   // Куда сохраняем сетку
+    string name2 = "save_paper-1_5(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 20; // 24000 * 60 * 9; // Число шагов
-    double period_print = 20.0; // С каким периодом выводим в часах
+    int all_step = 37000;// 17000 * 15;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 2.5; // С каким периодом выводим в часах
+    double time_razmer = 1.41282;
+
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2201,6 +2208,24 @@ int main(void)
             h_cell.Bz[k] = 0.0;
         }
     }
+
+    // Симметризация решения
+    if (false)
+    {
+       
+        for (int i = 0; i < N; i++)  // Заполняем начальные условия
+        {
+            double Vr = sqrt(kvv(h_cell.Vx[idx_cell(i, 0)], h_cell.Vy[idx_cell(i, 0)], 0.0));
+            for (int j = 1; j < M; j++)  // Заполняем начальные условия
+            {
+                double phi = PHI_CENTER(j);
+
+                h_cell.rho[idx_cell(i, j)] = h_cell.rho[idx_cell(i, 0)];
+                h_cell.Vx[idx_cell(i, j)] = Vr * cos(phi);
+                h_cell.Vy[idx_cell(i, j)] = Vr * sin(phi);
+            }
+        }
+    }
     
     // Копирование всех массивов на device
     if (true)
@@ -2248,7 +2273,7 @@ int main(void)
 
     dim3 block(BX, BY);
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
-    int num_ = 1;
+    int num_ = 0;
 
     // Глобальный цикл
     for (int step_ = 1; step_ <= all_step; step_++)
@@ -2358,7 +2383,7 @@ int main(void)
         }
 
 
-        if (host_all_T * 1.41282 > period_print * num_)
+        if (host_all_T * time_razmer > period_print * num_)
         {
             copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
             copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
@@ -2383,12 +2408,12 @@ int main(void)
             if (period_print > 0.499)
             {
                 // Если период маленький, то не надо слишком часто печатать 
-                Print_results_2D(num_, host_all_T, h_cell);
+                Print_results_2D(num_, host_all_T * time_razmer, h_cell);
             }
             num_++;
 
             // Считаем расход (текущий)
-            if (true)
+            if (false)
             {
                 double Mas = 0.0;
                 double Mas_without_phi = 0.0;
