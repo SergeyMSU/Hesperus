@@ -119,22 +119,22 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.0005 // 0.000186401  // (0.000447362)     // p = const_p * rho
+#define const_p 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 0.5 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
+#define rho_in 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.14) // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_grav (-0.0894215)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0369416)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line  (0.0111662) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.2) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.58554  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 0.735183 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define Bo_init 0.0 // 0.0545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+// #define phi_init 1.33888 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.266667)  // (0.266667)   //   Скорость вращения звезды
+#define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -717,6 +717,11 @@ __global__ void compute_fluxes(
                 {
                     printf("AAA = %E, %E, %E, %E, %E, %E, %E, %E, %E, %E, %E \n", rho_L, rho_R, Vx_L, Vy_L, Vz_L, Vx_R, Vy_R, Vz_R, P[0], P[1], P[2]);
                 }*/
+
+                if (fabs(P[4]) > 0.00000001 || fabs(P[5]) > 0.00000001 || fabs(P[6]) > 0.00000001 || fabs(Bx_L) > 0.00000001 || fabs(Bx_R) > 0.00000001)
+                {
+                    printf("ERROR B != 0  =  %E, %E, %E, \n", P[4], Bx_L, Bx_R);
+                }
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -1583,13 +1588,13 @@ __global__ void update_cells(
         if (true)
         {
             double dVrdr = fabs(dVr[idx]);
-            if (dVrdr > 10.0) dVrdr = 10.0;
+            if (dVrdr > 20.0) dVrdr = 10.0;
             
 
             double Vr1 = Vx_1 * cos(phi) + Vy_1 * sin(phi);
 
             double sigma = fabs(dVrdr * r / Vr1) - 1.0; 
-            double muc = 1.0 - 1.0 / kv(r);
+            double muc = 1.0 - 1.0 / kv(r); 
 
             double ff = 1.0;
 
@@ -1605,6 +1610,7 @@ __global__ void update_cells(
             }
 
             double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVrdr), alpha_line) / kv(r);
+
             if (fabs(fline) > 10.0)
             {
                 fline = 0.0;
@@ -1758,6 +1764,11 @@ __global__ void update_cells(
         Bx[idx] = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
         By[idx] = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
 
+        if (fabs(Bx[idx]) > 0.0000001)
+        {
+            printf("ERROR BB = %d, %lf, %E, %E\n", idx, phi, Bx[idx], By[idx]);
+        }
+
         /*if (i == 0 && (j == 128 || j == 127))
         {
             printf("BB = %d, %lf, %E, %E\n", j, phi, Bx[idx], By[idx]);
@@ -1775,6 +1786,9 @@ __global__ void update_cells(
         printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
     }
 }
+
+
+
 
 void test_polar_geometry(void)
 {
@@ -1887,7 +1901,7 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
                     sqrt(kv(h_cell.Bz[k]));
             }
 
-            fout5 << x << " " << y << " " << h_cell.rho[k] * 1.05 << " " << log10(h_cell.rho[k] * 1.05E-12) <<//
+            fout5 << x << " " << y << " " << h_cell.rho[k] << " " << log10(h_cell.rho[k]) <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
                 " " << Max_R << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
@@ -1917,12 +1931,12 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_zOph_28(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_zOph_28(350x256).bin";   // Куда сохраняем сетку
+    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_paper-1_2(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 10; // 24000 * 60 * 9; // Число шагов
-    double period_print = 0.025; // С каким периодом выводим в часах
+    int all_step = 17000 * 20; // 24000 * 60 * 9; // Число шагов
+    double period_print = 20.0; // С каким периодом выводим в часах
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
     double host_all_T = 0.0;
@@ -2156,7 +2170,8 @@ int main(void)
 
 
     // Заполнение массивов начальными условиями
-    if (read_setka == false)
+    if (true)
+    //if (read_setka == false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -2175,15 +2190,15 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            //h_cell.rho[k] = rho;
-            //h_cell.Vx[k] = vr * x / dist;
-            //h_cell.Vy[k] = vr * y / dist;
-            //h_cell.Vz[k] = vphi;
+            /*h_cell.rho[k] = rho;
+            h_cell.Vx[k] = vr * x / dist;
+            h_cell.Vy[k] = vr * y / dist;
+            h_cell.Vz[k] = vphi;*/
 
 
-            //h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
-            //h_cell.By[k] = 0.0;// By_dipole(r, phi);
-            //h_cell.Bz[k] = 0.0;
+            h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
+            h_cell.By[k] = 0.0;// By_dipole(r, phi);
+            h_cell.Bz[k] = 0.0;
         }
     }
     
@@ -2274,8 +2289,8 @@ int main(void)
             host_all_T += host_dT;
             if (step_ % 1000 == 0)
             {
-                cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.09556 
-                    << " hours,  dT =   " << std::scientific << host_dT * 1.09556 << endl;
+                cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.41282
+                    << " hours,  dT =   " << std::scientific << host_dT * 1.41282 << endl;
             }
         }
 
@@ -2343,7 +2358,7 @@ int main(void)
         }
 
 
-        if (host_all_T * 1.09556 > period_print * num_)
+        if (host_all_T * 1.41282 > period_print * num_)
         {
             copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
             copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
@@ -2401,6 +2416,45 @@ int main(void)
                 cout << "Vr = " << Vel << endl;
             }
         }
+    }
+
+
+    // Выведем параметры на гранях при R = Rb
+    if (true)
+    {
+        // Вертикальные грани
+        copyFromDevice(h_vFace.Prho, d_vFace.Prho, vFaceCount);
+        copyFromDevice(h_vFace.Pvx, d_vFace.Pvx, vFaceCount);
+        copyFromDevice(h_vFace.Pvy, d_vFace.Pvy, vFaceCount);
+        copyFromDevice(h_vFace.Pvz, d_vFace.Pvz, vFaceCount);
+        copyFromDevice(h_vFace.Pbx, d_vFace.Pbx, vFaceCount);
+        copyFromDevice(h_vFace.Pby, d_vFace.Pby, vFaceCount);
+        copyFromDevice(h_vFace.Pbz, d_vFace.Pbz, vFaceCount);
+        copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
+        double MM = 0.0;
+        double MM2 = 0.0;
+        double ddd = 0.0;
+        double ddd2 = 0.0;
+        for (int k = 0; k < M; ++k)
+        {
+            double r = Rb;
+            double phi = PHI_CENTER(k);
+            double x = r * cos(phi);
+
+            double r2 = R_EDGE(N / 2 + 1);
+            double phi2 = PHI_CENTER(k);
+            double x2 = r2 * cos(phi2);
+
+            MM += (2.0 * pi * x * r * DPHI(k)) * h_vFace.Prho[idx_vface(N, k)];
+            MM2 += (2.0 * pi * x2 * r2 * DPHI(k)) * h_vFace.Prho[idx_vface(N / 2 + 1, k)];
+            ddd2 += (2.0 * pi * x2 * r2 * DPHI(k));
+            ddd += (2.0 * pi * x * r * DPHI(k));
+        }
+        cout << "MM = " << MM * 310.062 << "  10^-6 Msolar/year" << endl;
+        cout << "MM2 = " << MM2 * 310.062 << "  10^-6 Msolar/year" << endl;
+
+        cout << "test = " << ddd << "   = " << 4.0 * pi * kv(Rb) << endl;
+        cout << "test2 = " << ddd2 << "   = " << 4.0 * pi * kv(R_EDGE(N / 2 + 1)) << endl;
     }
 
     // Надо усреднить по времени значения по углу:
@@ -2529,7 +2583,7 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r_pole.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"dVr_dr\", \"F_all\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"dVr_dr\", \"ff_disk\",\"F_all\",  ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 2; i++)
         {
@@ -2557,14 +2611,14 @@ int main(void)
             double dVr_dr = (Vr2 - Vr) / (r2 - r);
             double F_all = 0.0;
             double rho_1 = h_cell.rho[k];
+
             // Вычисляем силу
+            double ff = 1.0;
             if (true)
             {
                 F_all = (F_grav + F_continuum) * rho_1 / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
                 double sigma = fabs(dVr_dr * r / Vr) - 1.0;
                 double muc = 1.0 - 1.0 / kv(r);
-
-                double ff = 1.0;
 
                 if (fabs(dVr_dr) > 0.00001)
                 {
@@ -2572,7 +2626,7 @@ int main(void)
                         ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
                 }
 
-                double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVr_dr), alpha_line) / kv(r);
+                double fline = F_line * ff * pow(rho_1, -alpha_line) * pow(fabs(dVr_dr), alpha_line) / kv(r);
 
                 F_all += fline;
             }
@@ -2590,7 +2644,7 @@ int main(void)
 
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << dVr_dr << " " << F_all << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << dVr_dr << " " << ff << " " << F_all << endl;
         }
 
         fout1dr.close();
