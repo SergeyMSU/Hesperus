@@ -132,7 +132,7 @@
 #define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997
-#define Bo_init 0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.0 //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 //#define phi_init 1.05149 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
@@ -509,10 +509,18 @@ __global__ void compute_fluxes(
     // Заполняем фиктивные ячейки симметричными условиями
     if (j == M - 1)
     {
-        sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
+        /*sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
         sh_Vx[i_l][j_l + 1] = -sh_Vx[i_l][j_l];
         sh_Bx[i_l][j_l + 1] = -sh_Bx[i_l][j_l];
         sh_Bz[i_l][j_l + 1] = -sh_Bz[i_l][j_l];
+        sh_By[i_l][j_l + 1] = sh_By[i_l][j_l];
+        sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
+        sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];*/
+
+        sh_Vz[i_l][j_l + 1] = 0.0;
+        sh_Vx[i_l][j_l + 1] = 0.0;
+        sh_Bx[i_l][j_l + 1] = 0.0;
+        sh_Bz[i_l][j_l + 1] = 0.0;
         sh_By[i_l][j_l + 1] = sh_By[i_l][j_l];
         sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
         sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];
@@ -580,13 +588,13 @@ __global__ void compute_fluxes(
                 if (j == M - 1)
                 {
                     phi_g = pi / 2.0;
-                    phi2 = pi - phi1;
+                    phi2 = pi / 2.0; //pi - phi1;
                     phi4 = pi - phi3;
                 }
                 else if (j == M - 2)
                 {
                     phi2 = PHI_CENTER(j + 1);
-                    phi4 = pi - phi2;
+                    phi4 = pi / 2.0; //pi - phi2;
                 }
                 else
                 {
@@ -677,7 +685,19 @@ __global__ void compute_fluxes(
                     Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
                     By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
                 }
-            }
+           
+                if (j == M - 1)
+                {
+                    rho_R = sh_rho[i_l][j_l + 1];
+                    Vx_R = sh_Vx[i_l][j_l + 1];
+                    Bx_R = sh_Bx[i_l][j_l + 1];
+                    Bz_R = sh_Bz[i_l][j_l + 1];
+                    By_R = sh_By[i_l][j_l + 1];
+                    Vy_R = sh_Vy[i_l][j_l + 1];
+                    Vz_R = sh_Vz[i_l][j_l + 1];
+                }
+
+             }
 
             // Считаем поток
             if (true)
@@ -705,6 +725,7 @@ __global__ void compute_fluxes(
                     By_R += By_dipole(r, phi_g);
                 }
 
+                
                 double PQ = 0.0;
                 double SL = 0.0, SR = 0.0;
                 double P[8];
@@ -1974,11 +1995,11 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_paper-1_7(350x256).bin";   // Куда сохраняем сетку
+    string name1 = "save_paper-1_1-(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_paper-1_1-(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 10;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 2.5; // С каким периодом выводим в часах
+    int all_step = 17000 * 25;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 0.4; // С каким периодом выводим в часах
     double time_razmer = 1.41282;
 
     double host_dT = 1.0E30;
@@ -2025,15 +2046,6 @@ int main(void)
         h_cell.By = allocateHost<double>(cellCount);
         h_cell.Bz = allocateHost<double>(cellCount);
         h_cell.dVr = allocateHost<double>(cellCount);
-
-        h_cell_phi_average.rho = allocateHost<double>(M);
-        h_cell_phi_average.Vx  = allocateHost<double>(M);
-        h_cell_phi_average.Vy  = allocateHost<double>(M);
-        h_cell_phi_average.Vz  = allocateHost<double>(M);
-        h_cell_phi_average.Bx  = allocateHost<double>(M);
-        h_cell_phi_average.By  = allocateHost<double>(M);
-        h_cell_phi_average.Bz  = allocateHost<double>(M);
-        h_cell_phi_average.dVr = allocateHost<double>(M);
 
         h_cell_phi_average.rho = allocateHost<double>(M);
         h_cell_phi_average.Vx = allocateHost<double>(M);
@@ -2260,7 +2272,6 @@ int main(void)
     // Симметризация решения
     if (false)
     {
-       
         for (int i = 0; i < N; i++)  // Заполняем начальные условия
         {
             double Vr = sqrt(kvv(h_cell.Vx[idx_cell(i, 0)], h_cell.Vy[idx_cell(i, 0)], 0.0));
@@ -2460,7 +2471,8 @@ int main(void)
             }
             num_++;
 
-            if (true)
+            // Считаем расход массы
+            if (false)
             {
                 // Вертикальные грани
                 copyFromDevice(h_vFace.Prho, d_vFace.Prho, vFaceCount);
@@ -2501,7 +2513,7 @@ int main(void)
     }
 
 
-    // Выведем параметры на гранях при R = Rb
+    // Считаем расход массы на гранях при R = Rb и Rb/2
     if (true)
     {
         // Вертикальные грани
@@ -2544,13 +2556,13 @@ int main(void)
     {
         for (int j = 0; j < M; j++)
         {
-            h_cell_phi_average.rho[j] /= (num_ - 1);
-            h_cell_phi_average.Vx[j] /= (num_ - 1);
-            h_cell_phi_average.Vy[j] /= (num_ - 1);
-            h_cell_phi_average.Vz[j] /= (num_ - 1);
-            h_cell_phi_average.Bx[j] /= (num_ - 1);
-            h_cell_phi_average.By[j] /= (num_ - 1);
-            h_cell_phi_average.Bz[j] /= (num_ - 1);
+            h_cell_phi_average.rho[j] /= (num_);
+            h_cell_phi_average.Vx[j] /= (num_);
+            h_cell_phi_average.Vy[j] /= (num_);
+            h_cell_phi_average.Vz[j] /= (num_);
+            h_cell_phi_average.Bx[j] /= (num_);
+            h_cell_phi_average.By[j] /= (num_);
+            h_cell_phi_average.Bz[j] /= (num_);
         }
     }
 
