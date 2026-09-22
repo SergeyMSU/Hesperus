@@ -131,9 +131,9 @@
 
 #define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-// 0.00586533     0.0545476    0.0967779    0.173027
-#define Bo_init 0.173027  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init 1.05149 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+// 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997
+#define Bo_init 0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+//#define phi_init 1.05149 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
@@ -725,6 +725,12 @@ __global__ void compute_fluxes(
                 //    printf("ERROR B != 0  =  %E, %E, %E, \n", P[4], Bx_L, Bx_R);
                 //}
 
+                /*if (tmin < 5.0E-7)
+                {
+                    printf("1 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
+                        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
+                }*/
+
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
@@ -872,6 +878,12 @@ __global__ void compute_fluxes(
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
 
+                /*if (tmin < 5.0E-7)
+                {
+                    printf("2 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
+                        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
+                }*/
+
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
@@ -919,15 +931,24 @@ __global__ void compute_fluxes(
                     {
                         double Vr1 = sh_Vx[i_l][j_l] * cos(phi_g) + sh_Vy[i_l][j_l] * sin(phi_g);
                         double Vr2 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
-                        Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r3 - r);
 
-                        if (Vr > Vr1) Vr = Vr1;
+                        Vr = Vr1;
 
-                        if (Vr < 0.000001) Vr = Vr1;
+                        if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
                         if (Vr <= 0.0) Vr = 0.0;
-                        if (Vr > 5.0) Vr = 5.0;
 
-                        if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 2.0;   // Чтобы течение оставалось дозвуковым по r
+                        if (false)
+                        {
+                            Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r3 - r);
+
+                            if (Vr > Vr1) Vr = Vr1;
+
+                            if (Vr < 0.000001) Vr = Vr1;
+                            if (Vr <= 0.0) Vr = 0.0;
+                            if (Vr > 5.0) Vr = 5.0;
+
+                            if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
+                        }
                     }
 
 
@@ -948,10 +969,10 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
-                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+                    /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
                     {
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }
+                    }*/
 
 
                     sh_rho[i_l - 1][j_l] = rho_in;
@@ -1000,10 +1021,14 @@ __global__ void compute_fluxes(
                             dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
                             dVr[j * N + i] = dVr_;
 
-                            dVr_ = min(fabs(dVr_), 10.0);
-                            dVr_ = max(fabs(dVr_), 0.1);
-                            double fline = F_line * sh_rho[i_l][j_l] * pow(1.0 / sh_rho[i_l][j_l], alpha_line) / kv(r);
-                            tmin = my_min(tmin, krit * h2 * pow(dVr_, 1.0 - alpha_line) / (alpha_line * fline));
+                            // Попробуем ещё ограничить время каким-то типом волн, связанным с силой (но вроде бы из-за этого шаг по времени к нулю может стремиться
+                            if (false)
+                            {
+                                dVr_ = min(fabs(dVr_), 10.0);
+                                dVr_ = max(fabs(dVr_), 0.1);
+                                double fline = F_line * sh_rho[i_l][j_l] * pow(1.0 / sh_rho[i_l][j_l], alpha_line) / kv(r);
+                                tmin = my_min(tmin, krit * h2 * pow(dVr_, 1.0 - alpha_line) / (alpha_line * fline));
+                            }
                         }
                         
 
@@ -1101,6 +1126,12 @@ __global__ void compute_fluxes(
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman));
+
+                /*if (tmin < 5.0E-7)
+                {
+                    printf("3 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
+                        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
+                }*/
 
                 /*if (i == print_i && j == print_j)
                 {
@@ -1250,6 +1281,12 @@ __global__ void compute_fluxes(
                 double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman);
+
+                /*if (tmin < 5.0E-7)
+                {
+                    printf("4 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E, \n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
+                        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
+                }*/
 
                 //if (tmin_ < 1.0E-10)
                 //{
@@ -1938,9 +1975,9 @@ int main(void)
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_paper-1_5(350x256).bin";   // Куда сохраняем сетку
+    string name2 = "save_paper-1_7(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 37000;// 17000 * 15;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 10;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 2.5; // С каким периодом выводим в часах
     double time_razmer = 1.41282;
 
@@ -1965,6 +2002,8 @@ int main(void)
     FaceVars  h_vFace;   // вертикальные грани
     NodeVars  h_node;
 
+    CellVars  average_gran;
+
     // Девайс
     CellVars  d_cell;
     FaceVars  d_hFace;
@@ -1986,6 +2025,15 @@ int main(void)
         h_cell.By = allocateHost<double>(cellCount);
         h_cell.Bz = allocateHost<double>(cellCount);
         h_cell.dVr = allocateHost<double>(cellCount);
+
+        h_cell_phi_average.rho = allocateHost<double>(M);
+        h_cell_phi_average.Vx  = allocateHost<double>(M);
+        h_cell_phi_average.Vy  = allocateHost<double>(M);
+        h_cell_phi_average.Vz  = allocateHost<double>(M);
+        h_cell_phi_average.Bx  = allocateHost<double>(M);
+        h_cell_phi_average.By  = allocateHost<double>(M);
+        h_cell_phi_average.Bz  = allocateHost<double>(M);
+        h_cell_phi_average.dVr = allocateHost<double>(M);
 
         h_cell_phi_average.rho = allocateHost<double>(M);
         h_cell_phi_average.Vx = allocateHost<double>(M);
@@ -2314,8 +2362,8 @@ int main(void)
             host_all_T += host_dT;
             if (step_ % 1000 == 0)
             {
-                cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * 1.41282
-                    << " hours,  dT =   " << std::scientific << host_dT * 1.41282 << endl;
+                cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
+                    << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
             }
         }
 
@@ -2412,34 +2460,43 @@ int main(void)
             }
             num_++;
 
-            // Считаем расход (текущий)
-            if (false)
+            if (true)
             {
-                double Mas = 0.0;
-                double Mas_without_phi = 0.0;
-                double Vel = 0.0;
-                for (int i = N - 1; i < N; i++)
+                // Вертикальные грани
+                copyFromDevice(h_vFace.Prho, d_vFace.Prho, vFaceCount);
+                copyFromDevice(h_vFace.Pvx, d_vFace.Pvx, vFaceCount);
+                copyFromDevice(h_vFace.Pvy, d_vFace.Pvy, vFaceCount);
+                copyFromDevice(h_vFace.Pvz, d_vFace.Pvz, vFaceCount);
+                copyFromDevice(h_vFace.Pbx, d_vFace.Pbx, vFaceCount);
+                copyFromDevice(h_vFace.Pby, d_vFace.Pby, vFaceCount);
+                copyFromDevice(h_vFace.Pbz, d_vFace.Pbz, vFaceCount);
+                copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
+                double MM = 0.0;
+                double MM2 = 0.0;
+                double ddd = 0.0;
+                double ddd2 = 0.0;
+                for (int k = 0; k < M; ++k)
                 {
-                    for (int j = 0; j < M - 1; j++)
-                    {
-                        double r = R_CENTER(i, j);
-                        double phi = PHI_CENTER(j);
-                        double x = r * cos(phi);
-                        int k = j * N + i;
+                    double r = Rb;
+                    double phi = PHI_CENTER(k);
+                    double x = r * cos(phi);
 
-                        double Vr = h_cell.Vx[k] * cos(phi) + h_cell.Vy[k] * sin(phi);
-                        Vel += 0.5 * (Vr * sin(pi / 2.0 - phi)) * DPHI(j);
-                        Mas += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
-                        if (fabs(phi) > pi / (200.0))
-                        {
-                            Mas_without_phi += (2.0 * pi * x * r * DPHI(j)) * Vr * h_cell.rho[k];
-                        }
-                    }
+                    double r2 = R_EDGE(N / 2 + 1);
+                    double phi2 = PHI_CENTER(k);
+                    double x2 = r2 * cos(phi2);
+
+                    MM += (2.0 * pi * x * r * DPHI(k)) * h_vFace.Prho[idx_vface(N, k)];
+                    MM2 += (2.0 * pi * x2 * r2 * DPHI(k)) * h_vFace.Prho[idx_vface(N / 2 + 1, k)];
+                    ddd2 += (2.0 * pi * x2 * r2 * DPHI(k));
+                    ddd += (2.0 * pi * x * r * DPHI(k));
                 }
+                cout << "MM = " << MM * 310.062 << "  10^-6 Msolar/year" << endl;
+                cout << "MM2 = " << MM2 * 310.062 << "  10^-6 Msolar/year" << endl;
 
-                cout << "Mass rashod N = " << 87.4214 * Mas << " x 10^-8 MasSolar / year   or (10 degree out) " << 87.4214 * Mas_without_phi << endl;
-                cout << "Vr = " << Vel << endl;
+                cout << "test = " << ddd << "   = " << 4.0 * pi * kv(Rb) << endl;
+                cout << "test2 = " << ddd2 << "   = " << 4.0 * pi * kv(R_EDGE(N / 2 + 1)) << endl;
             }
+
         }
     }
 
