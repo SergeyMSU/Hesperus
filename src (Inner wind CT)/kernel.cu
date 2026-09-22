@@ -49,15 +49,20 @@
 #define DR(i) (DR1 * pow(qb, (i)))
 
 // Радиус центра i-й ячейки (i = 0..N-1)
+// 
+// Центры масс:
 //#define R_CENTER(i) ( (2.0/3.0) * \
 //                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
 //                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
 //                        (sin(0.5 * dphi) / (0.5 * dphi)) )  // равномерный угол
-#define R_CENTER(i,j) ( (2.0/3.0) * \
-                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
-                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
-                        (sin(0.5 * DPHI(j)) / (0.5 * DPHI(j))) )
-//#define R_CENTER(i) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
+
+//#define R_CENTER(i,j) ( (2.0/3.0) * \
+//                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
+//                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
+//                        (sin(0.5 * DPHI(j)) / (0.5 * DPHI(j))) )   // Неравномерный угол
+
+// Геометрический центр
+#define R_CENTER(i, j) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
 
 // ----------------- Угловое разбиение равномерное -----------------
 
@@ -132,8 +137,8 @@
 #define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997
-#define Bo_init 0.0 //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-//#define phi_init 1.05149 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+#define Bo_init 0.00586533 //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
@@ -587,7 +592,6 @@ __global__ void compute_fluxes(
 
                 if (j == M - 1)
                 {
-                    phi_g = pi / 2.0;
                     phi2 = pi / 2.0; //pi - phi1;
                     phi4 = pi - phi3;
                 }
@@ -688,13 +692,13 @@ __global__ void compute_fluxes(
            
                 if (j == M - 1)
                 {
-                    rho_R = sh_rho[i_l][j_l + 1];
-                    Vx_R = sh_Vx[i_l][j_l + 1];
-                    Bx_R = sh_Bx[i_l][j_l + 1];
-                    Bz_R = sh_Bz[i_l][j_l + 1];
-                    By_R = sh_By[i_l][j_l + 1];
-                    Vy_R = sh_Vy[i_l][j_l + 1];
-                    Vz_R = sh_Vz[i_l][j_l + 1];
+                    rho_L = rho_R = sh_rho[i_l][j_l + 1];
+                    Vx_L = Vx_R = sh_Vx[i_l][j_l + 1];
+                    Bx_L = Bx_R = sh_Bx[i_l][j_l + 1];
+                    Bz_L = Bz_R = sh_Bz[i_l][j_l + 1];
+                    By_L = By_R = sh_By[i_l][j_l + 1];
+                    Vy_L = Vy_R = sh_Vy[i_l][j_l + 1];
+                    Vz_L = Vz_R = sh_Vz[i_l][j_l + 1];
                 }
 
              }
@@ -751,6 +755,7 @@ __global__ void compute_fluxes(
                     printf("1 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
                         sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
                 }*/
+
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -990,10 +995,10 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
-                    /*if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
                     {
                         Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }*/
+                    }
 
 
                     sh_rho[i_l - 1][j_l] = rho_in;
@@ -1035,11 +1040,11 @@ __global__ void compute_fluxes(
                         // Сохраняем dVr/dr для дальнейшего вычисления силы в ячейке
                         if (true)
                         {
-                            // double h1 = r - r3;
+                            double h1 = r - r3;
                             double h2 = r2 - r;
                             double dVr_;
-                            //dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
-                            dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
+                            dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
+                            //dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
                             dVr[j * N + i] = dVr_;
 
                             // Попробуем ещё ограничить время каким-то типом волн, связанным с силой (но вроде бы из-за этого шаг по времени к нулю может стремиться
@@ -1199,68 +1204,18 @@ __global__ void compute_fluxes(
                 Bz_R = Bz_L; // linear(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
 
                 // Скорости Vx, Vy
-                if (true)
-                {
-                    //double Vr_R, Vphi_R;
+                Vx_L = sh_Vx[i_l - 1][j_l];
+                Vy_L = sh_Vy[i_l - 1][j_l];
 
-                    // Vr
-                    //if (true)
-                    //{
-                    //    double Vr1 = sh_Vx[i_l - 1][j_l] * cos(phi_g) + sh_Vy[i_l - 1][j_l] * sin(phi_g);
-                    //    double Vr2 = sh_Vx[i_l][j_l] * cos(phi_g) + sh_Vy[i_l][j_l] * sin(phi_g);
-                    //    double Vr4 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
+                Vx_R = Vx_L; 
+                Vy_R = Vy_L;
 
-                    //    Vr_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
-                    //}
+                Bx_L = sh_Bx[i_l - 1][j_l];
+                By_L = sh_By[i_l - 1][j_l];
 
-                    //// Vphi
-                    //if (true)
-                    //{
-                    //    double Vr1 = -sh_Vx[i_l - 1][j_l] * sin(phi_g) + sh_Vy[i_l - 1][j_l] * cos(phi_g);
-                    //    double Vr2 = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);
-                    //    double Vr4 = -sh_Vx[i_l + 1][j_l] * sin(phi_g) + sh_Vy[i_l + 1][j_l] * cos(phi_g);
+                Bx_R = Bx_L; // Br_R* cos(phi_g) - Bphi_R * sin(phi_g);
+                By_R = By_L; // Br_R* sin(phi_g) + Bphi_R * cos(phi_g);
 
-                    //    Vphi_R = linear(r4, Vr4, r2, Vr2, r1, Vr1, r_g);
-                    //}
-
-                    Vx_L = sh_Vx[i_l - 1][j_l];
-                    Vy_L = sh_Vy[i_l - 1][j_l];
-
-                    Vx_R = Vx_L; // Vr_R* cos(phi_g) - Vphi_R * sin(phi_g);
-                    Vy_R = Vy_L; // Vr_R* sin(phi_g) + Vphi_R * cos(phi_g);
-                }
-
-                // Магнитные поля Bx, By
-                if (true)
-                {
-                    //double Br_R, Bphi_R;
-
-                    // Br
-                    //if (true)
-                    //{
-                    //    double Br1 = sh_Bx[i_l][j_l] * cos(phi_g) + sh_By[i_l][j_l] * sin(phi_g);
-                    //    double Br2 = sh_Bx[i_l + 1][j_l] * cos(phi_g) + sh_By[i_l + 1][j_l] * sin(phi_g);
-                    //    double Br4 = sh_Bx[i_l + 2][j_l] * cos(phi_g) + sh_By[i_l + 2][j_l] * sin(phi_g);
-
-                    //    Br_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
-                    //}
-
-                    //// Bphi
-                    //if (true)
-                    //{
-                    //    double Br1 = -sh_Bx[i_l][j_l] * sin(phi_g) + sh_By[i_l][j_l] * cos(phi_g);
-                    //    double Br2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
-                    //    double Br4 = -sh_Bx[i_l + 2][j_l] * sin(phi_g) + sh_By[i_l + 2][j_l] * cos(phi_g);
-
-                    //    Bphi_R = linear(r4, Br4, r2, Br2, r1, Br1, r_g);
-                    //}
-
-                    Bx_L = sh_Bx[i_l - 1][j_l];
-                    By_L = sh_By[i_l - 1][j_l];
-
-                    Bx_R = Bx_L; // Br_R* cos(phi_g) - Bphi_R * sin(phi_g);
-                    By_R = By_L; // Br_R* sin(phi_g) + Bphi_R * cos(phi_g);
-                }
             }
 
             // Считаем поток
@@ -1447,7 +1402,7 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в левый узел на грани
             double d_below = (ez_face_DL - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             double d_above = (ez_face_UL - sh_Ez[il][jl + 1]);
-            slot_h_from_right[idx_node(i, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_h_from_right[idx_node(i, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в праввый узел на грани
             d_below = (ez_face_DR - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
@@ -1551,7 +1506,9 @@ __global__ void update_Bn_from_Ez(
         double h_Bn_do = h_Bn[idx_hface(i, j + 1)];
         double A1 = slot_h_from_left[idx_node(i + 1, j + 1)];
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
-        double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
+        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * R_EDGE(i + 1) - A1 * R_EDGE(i)) / (kv(R_EDGE(i + 1)) - kv(R_EDGE(i)));
+        //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
+        //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
 
         h_Bn[idx_hface(i, j + 1)] = h_Bn_posle;
 
@@ -1565,10 +1522,13 @@ __global__ void update_Bn_from_Ez(
     // Идёт от узла (i+1, j) [нижний] до узла (i+1, j+1) [верхний]
     if (i < N - 1)
     {
+        double phi1 = PHI_LEFT(j);
+        double phi2 = PHI_RIGHT(j);
         double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
         double A1 = slot_h_from_left[idx_node(i + 1, j)];
         double A2 = slot_h_from_left[idx_node(i + 1, j + 1)];
-        double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
+        double h_Bn_posle = h_Bn_do - *dT * (sin(phi2) * A2 - sin(phi1) * A1) / (R_EDGE(i + 1) * (cos(phi1) - cos(phi2)));
+        //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
 
         //v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
@@ -1696,13 +1656,22 @@ __global__ void update_cells(
         P += h_Prho[(j + 1) * N + i] * S3;  // phi+
         P -= h_Prho[j * N + i] * S3;      // phi-
 
-        if (i == print_i && j == print_j)
-        {
-            printf("POTOK rho: %E, %E, %E, %E \n ", v_Prho[j * (N + 1) + (i + 1)], -v_Prho[j * (N + 1) + i], h_Prho[(j + 1) * N + i], -h_Prho[j * N + i]);
-        }
+        //if (i == 0 && j > M - 4)
+        //{
+        //    printf("%d POTOK rho: %E, %E, %E, %E \n ", j, v_Prho[j * (N + 1) + (i + 1)] * S1, -v_Prho[j * (N + 1) + i] * S2, 
+        //        h_Prho[(j + 1) * N + i] * S3, -h_Prho[j * N + i] * S3);
+        //    printf("%d sss rho: %E, %E, %E\n ", j, S1, S2, S3);
+        //}
 
         ppp = P;
         rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
+
+        //if (i == 0 && j > M - 4)
+        //{
+        //    printf("%d rho: %E, %E, %E, %E, %E \n ", j, (P / dV + rho_1 * Vx_1 / x), P, dV,
+        //        Vx_1, x);
+        //}
+
         if (rho_2 < 1.0E-7)
         {
             rho_2 = 1.0E-7;
@@ -1995,11 +1964,11 @@ int main(void)
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_paper-1_1-(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_paper-1_1-(350x256).bin";   // Куда сохраняем сетку
+    string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_paper-1_21(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 25;// 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 0.4; // С каким периодом выводим в часах
+    int all_step = 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 13.0; // С каким периодом выводим в часах
     double time_razmer = 1.41282;
 
     double host_dT = 1.0E30;
@@ -2275,7 +2244,7 @@ int main(void)
         for (int i = 0; i < N; i++)  // Заполняем начальные условия
         {
             double Vr = sqrt(kvv(h_cell.Vx[idx_cell(i, 0)], h_cell.Vy[idx_cell(i, 0)], 0.0));
-            for (int j = 1; j < M; j++)  // Заполняем начальные условия
+            for (int j = 0; j < M; j++)  // Заполняем начальные условия
             {
                 double phi = PHI_CENTER(j);
 
@@ -2371,7 +2340,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 1000 == 0)
+            if (step_ % 300 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
@@ -2677,7 +2646,7 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r_pole.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"dVr_dr\", \"ff_disk\",\"F_all\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"dVr_dr\", \"ff_disk\",\"F_all\", \"f_pole\",  ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 2; i++)
         {
@@ -2695,8 +2664,8 @@ int main(void)
             y = r * sin(phi);
 
 
-            double bx = h_cell.Bx[k];// +Bx_dipole(r, phi);
-            double by = h_cell.By[k];// +By_dipole(r, phi);
+            double bx = h_cell.Bx[k] + Bx_dipole(r, phi);
+            double by = h_cell.By[k] + By_dipole(r, phi);
 
 
             double Vr = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / sqrt(x * x + y * y);
@@ -2738,7 +2707,8 @@ int main(void)
 
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << dVr_dr << " " << ff << " " << F_all << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << dVr_dr << " " << ff << " " << F_all 
+                << " " << 1.0 / (r * r * sqrt(kvv(bx, by, h_cell.Bz[k]))) << endl;
         }
 
         fout1dr.close();
