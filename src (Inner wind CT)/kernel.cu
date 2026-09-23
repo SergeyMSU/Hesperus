@@ -1503,10 +1503,25 @@ __global__ void update_Bn_from_Ez(
     // Идёт от узла (i, j+1) [левый] до узла (i+1, j+1) [правый]
     if(i < N - 1)
     {
+        // #define PHI_LEFT(j)  (PHI_EDGE(j))
+        // #define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+        // // Радиус i-й границы (i = 0..N)
+        // #define R_EDGE(i) (1.0 + DR1 * (pow(qb, (i)) - 1.0) / (qb - 1.0))
+
+        double phi1 = PHI_RIGHT(j);
+        double r1 = R_EDGE(i + 1);
+        double x1 = r1 * cos(phi1);
+        double phi2 = phi1;
+        double r2 = R_EDGE(i);
+        double x2 = r2 * cos(phi2);
+        
+        double znamenatel = (x1 + x2) * DR(i);
+        if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
+
         double h_Bn_do = h_Bn[idx_hface(i, j + 1)];
         double A1 = slot_h_from_left[idx_node(i + 1, j + 1)];
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
-        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * R_EDGE(i + 1) - A1 * R_EDGE(i)) / (kv(R_EDGE(i + 1)) - kv(R_EDGE(i)));
+        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
 
@@ -1523,11 +1538,19 @@ __global__ void update_Bn_from_Ez(
     if (i < N - 1)
     {
         double phi1 = PHI_LEFT(j);
+        double r1 = R_EDGE(i + 1);
+        double x1 = r1 * cos(phi1);
         double phi2 = PHI_RIGHT(j);
+        double r2 = r1;
+        double x2 = r2 * cos(phi2);
+
+        double znamenatel = (x1 + x2) * (DPHI(j) * r1);
+        if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
+
         double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
         double A1 = slot_h_from_left[idx_node(i + 1, j)];
         double A2 = slot_h_from_left[idx_node(i + 1, j + 1)];
-        double h_Bn_posle = h_Bn_do - *dT * (sin(phi2) * A2 - sin(phi1) * A1) / (R_EDGE(i + 1) * (cos(phi1) - cos(phi2)));
+        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
 
@@ -1541,9 +1564,29 @@ __global__ void update_Bn_from_Ez(
     }
     else
     {
+        // Это для самой правой грани сетки  (там нужно брать Ez из предыдущих узлов)
+
+        double phi1 = PHI_LEFT(j);
+        double r1 = R_EDGE(i + 1);
+        double x1 = r1 * cos(phi1);
+        double phi2 = PHI_RIGHT(j);
+        double r2 = r1;
+        double x2 = r2 * cos(phi2);
+
+        double znamenatel = (x1 + x2) * (DPHI(j) * r1);
+        if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
+
+        double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
+        double A1 = slot_h_from_left[idx_node(i, j)];
+        double A2 = slot_h_from_left[idx_node(i, j + 1)];
+        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
+        //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
+        v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
+
+
         // Это для самой правой грани сетки
-        v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
-            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i + 1));
+        // v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
+        //    *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i + 1));
     }
 
     // попробуем обновить Bn на поверхности звезды
@@ -1777,18 +1820,52 @@ __global__ void update_cells(
         {
             double Br_left = v_Bn[idx_vface(i, j)];
             double Br_right = v_Bn[idx_vface(i + 1, j)];
-            double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
-            double d_left = R_CENTER(i, j) - R_EDGE(i);
-            Br_center = (Br_left * d_right + Br_right * d_left) / (d_left + d_right);
+
+            double r1 = R_EDGE(i);
+            double r = R_CENTER(i, j);
+            double r2 = R_EDGE(i + 1);
+            double phi1 = PHI_LEFT(i);
+            double phi2 = PHI_RIGHT(i);
+
+            double A1 = pi * r1 * DPHI(j) * (r1 * cos(phi1) + r1 * cos(phi2));
+            double A2 = pi * r2 * DPHI(j) * (r2 * cos(phi1) + r2 * cos(phi2));
+            double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));
+
+            if (fabs(A) < 0.000001)
+            {
+                printf("1 ERROR A = %E\n", A);
+            }
+
+
+            // double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
+            // double d_left = R_CENTER(i, j) - R_EDGE(i);
+            //Br_center = (Br_left * d_right + Br_right * d_left) / (d_left + d_right);
+            Br_center = (Br_left * A1 + Br_right * A2) / (2.0 * A);
         }
 
         // --- Bphi из горизонтальных (нижней и верхней) граней ---
         {
             double Bphi_bottom = h_Bn[idx_hface(i, j)];
             double Bphi_top = h_Bn[idx_hface(i, j + 1)];
+
+            double r1 = R_EDGE(i);
+            double r = R_CENTER(i, j);
+            double r2 = R_EDGE(i + 1);
+            double phi1 = PHI_LEFT(i);
+            double phi2 = PHI_RIGHT(i);
+
+            double A1 = pi * DR(i) * (r1 * cos(phi1) + r2 * cos(phi1));
+            double A2 = pi * DR(i) * (r1 * cos(phi2) + r2 * cos(phi2));
+            double A = pi * DR(i) * (r1 * cos(phi) + r2 * cos(phi));
+
+            if (fabs(A) < 0.000001)
+            {
+                printf("2 ERROR A = %E\n", A);
+            }
+
             double d_top = PHI_RIGHT(j) - PHI_CENTER(j);
             double d_bottom = PHI_CENTER(j) - PHI_LEFT(j);
-            Bphi_center = (Bphi_bottom * d_top + Bphi_top * d_bottom) / (d_bottom + d_top);
+            Bphi_center = (Bphi_bottom * A1 + Bphi_top * A2) / (2.0 * A);
         }
 
         double phi_c = PHI_CENTER(j);
@@ -1818,8 +1895,6 @@ __global__ void update_cells(
         printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
     }
 }
-
-
 
 
 void test_polar_geometry(void)
@@ -1967,8 +2042,8 @@ int main(void)
     string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_paper-1_21(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 13.0; // С каким периодом выводим в часах
+    int all_step = 100; // 17000 * 1; // 24000 * 60 * 9; // Число шагов
+    double period_print = 20.0; // С каким периодом выводим в часах
     double time_razmer = 1.41282;
 
     double host_dT = 1.0E30;
@@ -2340,7 +2415,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 300 == 0)
+            if (step_ % 10 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
