@@ -18,7 +18,7 @@
 #define dphi (pi/M)           
 #define qphi (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
-#define print_i (348)           // предполагаем, что M чётное
+#define print_i (34800)           // предполагаем, что M чётное
 #define print_j (254)           // предполагаем, что M чётное
 
 // Предполагается, что индексы ячеек i (по радиусу) и j (по углу) отсчитываются от 0
@@ -39,11 +39,11 @@
 //                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
 //                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
 //                        (sin(0.5 * dphi) / (0.5 * dphi)) )  // равномерный угол
-#define R_CENTER(i,j) ( (2.0/3.0) * \
-                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
-                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
-                        (sin(0.5 * DPHI(j)) / (0.5 * DPHI(j))) )
-//#define R_CENTER(i) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
+//#define R_CENTER(i,j) ( (2.0/3.0) * \
+//                        (pow(R_EDGE((i)+1), 3) - pow(R_EDGE(i), 3)) / \
+//                        (pow(R_EDGE((i)+1), 2) - pow(R_EDGE(i), 2)) * \
+//                        (sin(0.5 * DPHI(j)) / (0.5 * DPHI(j))) )   // неравномерный угол
+#define R_CENTER(i, j) (0.5 * (R_EDGE(i) + R_EDGE(i + 1)))
 
 // ----------------- Угловое разбиение равномерное -----------------
 
@@ -105,19 +105,19 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.000186401  // (0.000447362)     // p = const_p * rho
+#define const_p 0.0000854344  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 0.45 // (0.220637)     // p = const_p * rho
+#define rho_in 1.0 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.187168 / 3.0)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0129046)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.067358)     // Коэффициент внутри line-driven силы
+#define F_grav (-0.0894215)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0369416)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line (0.0111662)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.6) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.0 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.00586533 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (pi/2.0) // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
@@ -2022,7 +2022,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         // линейный снос Vr
         double Vr1 = (u_1.x * x + u_1.y * y) / r;
         double Vr2 = u_2.x * cos(phi2) + u_2.y * sin(phi2);
-        Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
+        //Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
+        Vr = Vr1; // +(Vr2 - Vr1) / (r2 - r) * (r4 - r);
 
 
         if (Vr < 0.000001) Vr = Vr1;
@@ -2050,10 +2051,10 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
         b_4.z = b_1.z;
 
-        double Br1 = b_1.x * cos(phi) + b_1.y * sin(phi);
-        double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
+        //double Br1 = b_1.x * cos(phi) + b_1.y * sin(phi);
+        //double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
         //double Br = Br1 + Bo_init * cos(pi / 2.0 - phi) * (-1.0 + kv(1.0/r));
-        //double Br = 0.0;
+        double Br = 0.0;
 
 
         double Bphi1 = -b_1.x * sin(phi) + b_1.y * cos(phi);
@@ -2070,10 +2071,10 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
 
 
-        if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+        /*if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
         {
             Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-        }
+        }*/
 
         u_4.x = (Vr * cos(phi) - Vphi * sin(phi));
         u_4.y = (Vr * sin(phi) + Vphi * cos(phi));
@@ -2113,8 +2114,9 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
         // линейный снос Vr
         double Vr1 = u_4.x * cos(phi) + u_4.y * sin(phi);
-        double Vr2 = u_1.x * cos(phi) + u_1.y * sin(phi);
-        Vr = Vr1 + (Vr2 - Vr1) / (r - r4) * (r41 - r4);
+        // double Vr2 = u_1.x * cos(phi) + u_1.y * sin(phi);
+        //Vr = Vr1 + (Vr2 - Vr1) / (r - r4) * (r41 - r4);
+        Vr = Vr1;
 
 
         if (Vr < 0.000001) Vr = Vr1;
@@ -2153,10 +2155,10 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
 
 
-        if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+        /*if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
         {
             Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-        }
+        }*/
 
         u_41.x = (Vr * cos(phi) - Vphi * sin(phi));
         u_41.y = (Vr * sin(phi) + Vphi * cos(phi));
@@ -2337,8 +2339,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             By_dipole_ = By_dipole(r_g, phi_g);
 
 
-            tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, ch_now, ch_max_, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
             ch_max = max(ch_max, ch_max_);
 
             if (isnan(P[4]) == true || isnan(P[5]) == true || isnan(P[6]) == true)
@@ -2451,8 +2453,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, ch_now, ch_max_, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, x, y));
             ch_max = max(ch_max, ch_max_);
 
             if (n == print_i && m == print_j)
@@ -2555,8 +2557,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, ch_now, ch_max_, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DR(n), method, x, y));
             ch_max = max(ch_max, ch_max_);
 
             //if (n == print_i && m == print_j)
@@ -2666,8 +2668,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             Bx_dipole_ = Bx_dipole(r_g, phi_g);
             By_dipole_ = By_dipole(r_g, phi_g);
 
-            tmin = my_min(tmin, HLLDQ_Korolkov_psi(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
-                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, ch_now, ch_max_, x, y));
+            tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, psi_L, p_L, u_L, v_L, w_L, bx_L + Bx_dipole_, by_L + By_dipole_, bz_L, rho_R, psi_R, p_R, //
+                u_R, v_R, w_R, bx_R + Bx_dipole_, by_R + By_dipole_, bz_R, P, PQ, n1, n2, 0.0, DPHI(m) * r_g, method, x, y));
             ch_max = max(ch_max, ch_max_);
 
             /*if (n == print_i && m == print_j)
@@ -2701,10 +2703,10 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         atomicMinDouble(T, tmin);
     }
 
-    if (*ch_posle < ch_max)
+    /*if (*ch_posle < ch_max)
     {
         atomicMaxDouble(ch_posle, ch_max);
-    }
+    }*/
 
     double dV = CELL_AREA(n, m);
     //double dV = CELL_AREA(n);
@@ -2771,12 +2773,12 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
 
             //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
-            tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0005));
+            /*tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0005));
 
             if (*T > tmin)
             {
                 atomicMinDouble(T, tmin);
-            }
+            }*/
 
             //double vth = sqrt(const_p);
             //double vth = sqrt(const_p * sqrt(1.0 / r));
@@ -2809,7 +2811,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     Pdiv = Pdiv + dV * bx / x;
     //Pdiv = 0.0;
 
-    *T_do = 1.0E-4;
+    //*T_do = 1.0E-4;
 
     s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
     //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
@@ -2872,7 +2874,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
     //tau = 4.0 * *T_do;
 
-    s2[index].z = (s_1.z - *T_do * PS.z / dV - *T_do * ch_now * ch_now * bx / x) * exp(-*T_do / tau);
+    s2[index].z = 0.0; // (s_1.z - *T_do * PS.z / dV - *T_do * ch_now * ch_now * bx / x)* exp(-*T_do / tau);
 
     if (n == print_i && m == print_j)
     {
@@ -3091,9 +3093,9 @@ int main(void)
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
-    string name1 = "save_zOph_1(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_zOph_psi_2(350x256).bin";   // Куда сохраняем
-    int all_step = 1;// 24000 * 60 * 9; // 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем
+    string name2 = "save_paper-1_12(350x256).bin";   // Куда сохраняем
+    int all_step = 24000 * 3; // 50000 * 6 * 2;// 1 * 1;  // 294
 
 
     double3* host_s;
@@ -3164,19 +3166,27 @@ int main(void)
     *host_ch_posle = 0.0;
     
     // Считываем начальное с файла.
-    if (false)
+    if (true)
     {
 
         ifstream bfin(name1, ios::binary);
-        for (size_t k = 0; k < K; k++) {
+        for (size_t k = 0; k < K; k++) 
+        {
             bfin.read((char*)&host_s[k].x, sizeof(host_s[k].x));
-            bfin.read((char*)&host_s[k].y, sizeof(host_s[k].y));
+            //bfin.read((char*)&host_s[k].y, sizeof(host_s[k].y));
             bfin.read((char*)&host_u[k].x, sizeof(host_u[k].x));
             bfin.read((char*)&host_u[k].y, sizeof(host_u[k].y));
             bfin.read((char*)&host_u[k].z, sizeof(host_u[k].z));
             bfin.read((char*)&host_b[k].x, sizeof(host_b[k].x));
             bfin.read((char*)&host_b[k].y, sizeof(host_b[k].y));
             bfin.read((char*)&host_b[k].z, sizeof(host_b[k].z));
+
+            host_s[k].y = const_p * host_s[k].x;
+            host_s[k].z = 0.0;
+
+            host_s2[k] = host_s[k];
+            host_u2[k] = host_u[k];
+            host_b2[k] = host_b[k];
         }
         bfin.close();
     }
@@ -3191,7 +3201,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3453,7 +3463,7 @@ int main(void)
         }
 
         // Считаем div B
-        if (true)
+        if (false)
         {
             if ((i % (30000) == 0))
             {
@@ -3799,11 +3809,11 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\", \"f_pole\",  ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 1; i++)
         {
-            int j = int(M / 2);
+            int j = M - 1; // int(M / 2);
             int k = j * N + i;
             double r = R_CENTER(i, j);
             //double r = R_CENTER(i);
@@ -3839,7 +3849,8 @@ int main(void)
             fout1dr << r << " " << host_s[k].x << " " << host_s[k].y <<//
                 " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
-                Max << " " << Max_alf << " " << Temp << endl;
+                Max << " " << Max_alf << " " << Temp << " " << 
+                1.0 / (r * r * sqrt(kvv(bx, by, host_b[k].z))) << endl;
         }
 
         fout1dr.close();

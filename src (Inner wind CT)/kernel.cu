@@ -1407,7 +1407,12 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в праввый узел на грани
             d_below = (ez_face_DR - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_UR - sh_Ez[il][jl + 1]);
-            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            /*if (i == 2 && j == 100)
+            {
+                printf("1: %E, %E, %E \n", sh_Ez[il][jl], sh_Ez[il][jl + 1], ez_face);
+            }*/
         }
 
         // ---------------------------------------------------------------------
@@ -1433,12 +1438,17 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в верхний узел на грани
             double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             double d_above = (ez_face_RU - sh_Ez[il + 1][jl]);
-            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в нижний узел на грани
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
-            slot_v_from_above[idx_node(i + 1, j)] = ez_face +hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            /*if (i == 2 && j == 100)
+            {
+                printf("2: %E, %E, %E \n", sh_Ez[il][jl], sh_Ez[il + 1][jl], ez_face);
+            }*/
         }
 
         // Левая v-грань у поверхности звезды
@@ -1479,6 +1489,29 @@ __global__ void compute_cell_ez_and_slopes(
         {
             slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
                 + slot_v_from_below[nd] + slot_v_from_above[nd]);
+
+            /*double phi1 = PHI_LEFT(j);
+            double r1 = R_CENTER(i - 1, j);
+            double x1 = r1 * cos(phi1);
+
+            double phi2 = phi1;
+            double r2 = R_CENTER(i, j);
+            double x2 = r2 * cos(phi2);
+
+            double phi3 = PHI_CENTER(j - 1);
+            double r3 = R_EDGE(i);
+            double x3 = r3 * cos(phi3);
+
+            double phi4 = PHI_CENTER(j);
+            double r4 = R_EDGE(i);
+            double x4 = r4 * cos(phi4);
+
+            double phi = PHI_LEFT(j);
+            double r = R_EDGE(i);
+            double x = r * cos(phi);
+
+            slot_h_from_left[nd] = 0.25 * (x1 * slot_h_from_left[nd] + x2 * slot_h_from_right[nd]
+                + x3 * slot_v_from_below[nd] + x4 * slot_v_from_above[nd]) / x;*/
         }
 
         /*if (i == 0 && j == 128)
@@ -1503,11 +1536,6 @@ __global__ void update_Bn_from_Ez(
     // Идёт от узла (i, j+1) [левый] до узла (i+1, j+1) [правый]
     if(i < N - 1)
     {
-        // #define PHI_LEFT(j)  (PHI_EDGE(j))
-        // #define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
-        // // Радиус i-й границы (i = 0..N)
-        // #define R_EDGE(i) (1.0 + DR1 * (pow(qb, (i)) - 1.0) / (qb - 1.0))
-
         double phi1 = PHI_RIGHT(j);
         double r1 = R_EDGE(i + 1);
         double x1 = r1 * cos(phi1);
@@ -1523,14 +1551,9 @@ __global__ void update_Bn_from_Ez(
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
         double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
-        //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
+
 
         h_Bn[idx_hface(i, j + 1)] = h_Bn_posle;
-
-        /*if (i == 1 && j == 100)
-        {
-            printf("h-gran: %E, %E, %E, %E, %E, %E,\n", h_Bn_do, h_Bn_posle, A1, A2, *dT, DR(i));
-        }*/
     }
 
     // --- Правая v-грань этой ячейки: v-грань(i+1, j) ---
@@ -1557,10 +1580,6 @@ __global__ void update_Bn_from_Ez(
         //v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
         //    *dT * (slot_h_from_left[idx_node(i + 1, j + 1)] - slot_h_from_left[idx_node(i + 1, j)]) / (DPHI(j) * R_EDGE(i + 1));
 
-        /*if (i == 1 && j == 100)
-        {
-            printf("v-gran: %E, %E, %E, %E, %E, %E,\n", h_Bn_do, h_Bn_posle, A1, A2, *dT, (DPHI(j) * R_EDGE(i + 1)));
-        }*/
     }
     else
     {
@@ -1579,6 +1598,7 @@ __global__ void update_Bn_from_Ez(
         double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
         double A1 = slot_h_from_left[idx_node(i, j)];
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
+
         double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
@@ -1590,10 +1610,11 @@ __global__ void update_Bn_from_Ez(
     }
 
     // попробуем обновить Bn на поверхности звезды
-    if(false)//(i == 0)
+    if(i == 0)
     {
-        v_Bn[idx_vface(i, j)] = v_Bn[idx_vface(i, j)] -
-            *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i));
+        v_Bn[idx_vface(i, j)] = 0.0;
+        // v_Bn[idx_vface(i, j)] = v_Bn[idx_vface(i, j)] -
+        //    *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i));
     }
 }
 
@@ -1734,7 +1755,7 @@ __global__ void update_cells(
             bb = true;
         }
 
-        rho[idx] = rho_2;
+        //rho[idx] = rho_2;
     }
 
 
@@ -1755,7 +1776,7 @@ __global__ void update_cells(
         }
 
         Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx) / rho_2;
-        Vx[idx] = Vx_2;
+        //Vx[idx] = Vx_2;
     }
 
     // Vy
@@ -1774,7 +1795,7 @@ __global__ void update_cells(
         }
 
         Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy) / rho_2;
-        Vy[idx] = Vy_2;
+        //Vy[idx] = Vy_2;
     }
 
     // Vz
@@ -1793,7 +1814,7 @@ __global__ void update_cells(
         }
 
         Vz_2 = (rho_1 * Vz_1 - dTime * P / dV - 2.0 * dTime * (rho_1 * Vx_1 * Vz_1 - Bx_1 * Bz_1 / cpi4) / x) / rho_2;
-        Vz[idx] = Vz_2;
+        //Vz[idx] = Vz_2;
     }
 
     // Bz
@@ -1807,7 +1828,7 @@ __global__ void update_cells(
         P -= h_Pbz[j * N + i] * S3;      // phi-
 
         Bz_2 = Bz_1 - dTime * P / dV;
-        Bz[idx] = Bz_2;
+        //Bz[idx] = Bz_2;
     }
 
     // Bx, By
@@ -1821,7 +1842,15 @@ __global__ void update_cells(
             double Br_left = v_Bn[idx_vface(i, j)];
             double Br_right = v_Bn[idx_vface(i + 1, j)];
 
+            double phi1 = phi;
             double r1 = R_EDGE(i);
+            double x1 = r1 * cos(phi1);
+
+            double phi2 = phi;
+            double r2 = R_EDGE(i + 1);
+            double x2 = r2 * cos(phi2);
+
+            /*double r1 = R_EDGE(i);
             double r = R_CENTER(i, j);
             double r2 = R_EDGE(i + 1);
             double phi1 = PHI_LEFT(i);
@@ -1829,18 +1858,16 @@ __global__ void update_cells(
 
             double A1 = pi * r1 * DPHI(j) * (r1 * cos(phi1) + r1 * cos(phi2));
             double A2 = pi * r2 * DPHI(j) * (r2 * cos(phi1) + r2 * cos(phi2));
-            double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));
+            double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));*/
 
-            if (fabs(A) < 0.000001)
-            {
-                printf("1 ERROR A = %E\n", A);
-            }
+            //Br_center = (Br_left * x1 + Br_right * x2) / (2.0 * x);
+            Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
 
 
-            // double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
-            // double d_left = R_CENTER(i, j) - R_EDGE(i);
+            //double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
+            //double d_left = R_CENTER(i, j) - R_EDGE(i);
             //Br_center = (Br_left * d_right + Br_right * d_left) / (d_left + d_right);
-            Br_center = (Br_left * A1 + Br_right * A2) / (2.0 * A);
+            
         }
 
         // --- Bphi из горизонтальных (нижней и верхней) граней ---
@@ -1848,7 +1875,16 @@ __global__ void update_cells(
             double Bphi_bottom = h_Bn[idx_hface(i, j)];
             double Bphi_top = h_Bn[idx_hface(i, j + 1)];
 
-            double r1 = R_EDGE(i);
+
+            /*double phi1 = PHI_LEFT(i);
+            double r1 = r;
+            double x1 = r1 * cos(phi1);
+
+            double phi2 = PHI_RIGHT(i);
+            double r2 = r;
+            double x2 = r2 * cos(phi2);*/
+
+            /*double r1 = R_EDGE(i);
             double r = R_CENTER(i, j);
             double r2 = R_EDGE(i + 1);
             double phi1 = PHI_LEFT(i);
@@ -1856,16 +1892,14 @@ __global__ void update_cells(
 
             double A1 = pi * DR(i) * (r1 * cos(phi1) + r2 * cos(phi1));
             double A2 = pi * DR(i) * (r1 * cos(phi2) + r2 * cos(phi2));
-            double A = pi * DR(i) * (r1 * cos(phi) + r2 * cos(phi));
+            double A = pi * DR(i) * (r1 * cos(phi) + r2 * cos(phi));*/
 
-            if (fabs(A) < 0.000001)
-            {
-                printf("2 ERROR A = %E\n", A);
-            }
+            //Bphi_center = (Bphi_bottom * x1 + Bphi_top * x2) / (2.0 * x);
+
 
             double d_top = PHI_RIGHT(j) - PHI_CENTER(j);
             double d_bottom = PHI_CENTER(j) - PHI_LEFT(j);
-            Bphi_center = (Bphi_bottom * A1 + Bphi_top * A2) / (2.0 * A);
+            Bphi_center = (Bphi_bottom * d_top + Bphi_top * d_bottom) / (d_top + d_bottom);
         }
 
         double phi_c = PHI_CENTER(j);
@@ -2042,7 +2076,7 @@ int main(void)
     string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_paper-1_21(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 100; // 17000 * 1; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000; // 24000 * 60 * 9; // Число шагов
     double period_print = 20.0; // С каким периодом выводим в часах
     double time_razmer = 1.41282;
 
@@ -2301,10 +2335,10 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            /*h_cell.rho[k] = rho;
-            h_cell.Vx[k] = vr * x / dist;
-            h_cell.Vy[k] = vr * y / dist;
-            h_cell.Vz[k] = vphi;*/
+            h_cell.rho[k] = 1.0;
+            h_cell.Vx[k] = 1.0 * x / dist;
+            h_cell.Vy[k] = 1.0 * y / dist;
+            h_cell.Vz[k] = 0.0;
 
 
             h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
@@ -2415,7 +2449,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 10 == 0)
+            if (step_ % 100 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
@@ -2679,7 +2713,7 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r_eqv.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",  ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"f_pole\", ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 1; i++)
         {
@@ -2710,7 +2744,8 @@ int main(void)
 
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << endl;
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " << 
+                1.0 / (r * r * sqrt(kvv(bx, by, h_cell.Bz[k]))) << endl;
         }
 
         fout1dr.close();
