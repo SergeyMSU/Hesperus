@@ -2078,7 +2078,7 @@ int main(void)
     bool save_setka = true;                      // Надо ли сохранять сетку?
     int all_step = 17000; // 24000 * 60 * 9; // Число шагов
     double period_print = 20.0; // С каким периодом выводим в часах
-    double time_razmer = 1.41282;
+    double time_razmer = 1.0; // 1.41282;
 
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
