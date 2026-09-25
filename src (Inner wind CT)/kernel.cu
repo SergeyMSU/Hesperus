@@ -146,6 +146,9 @@
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
 #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
+
+#define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
+
 // Освободить хост-память (если она больше не нужна после копирования)
 #define FREE_HOST(ptr) delete[] ptr;
 
@@ -708,7 +711,8 @@ __global__ void compute_fluxes(
             {
                 int idx_h = (j + 1) * N + i;
 
-                // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
+
+                // Надо будет ещё подправить Bn в ячейке из Bn на грани, посчитанный через CT
                 {
                     double Br = Bx_L * cos(phi_g) + By_L * sin(phi_g);
                     double Bphi = h_Bn[idx_h];
@@ -719,7 +723,7 @@ __global__ void compute_fluxes(
                     Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
                     By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
                 }
-
+                
                 // Добавляем фоновое дипольное поле
                 {
                     Bx_L += Bx_dipole(r, phi_g);
@@ -756,6 +760,15 @@ __global__ void compute_fluxes(
                         sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
                 }*/
 
+                /*if (i == 5 && j == 220)
+                {
+                    printf("Potok: %E, %E, %E; Br = %E, %E; Bphi = %E, %E; Vr = %E, %E; Vphi = %E, %E \n", P[4], P[5], P[6], Bx_L* cos(phi_g) + By_L * sin(phi_g), Bx_R* cos(phi_g) + By_R * sin(phi_g), 
+                        -Bx_L* sin(phi_g) + By_L * cos(phi_g), -Bx_R* sin(phi_g) + By_R * cos(phi_g),
+                        Vx_L* cos(phi_g) + Vy_L * sin(phi_g), Vx_R* cos(phi_g) + Vy_R * sin(phi_g),
+                        -Vx_L* sin(phi_g) + Vy_L * cos(phi_g), -Vx_R* sin(phi_g) + Vy_R * cos(phi_g));
+                    printf("h_Bn[idx_h] = %E, %E \n", h_Bn[idx_h], -Bx_dipole(r, phi_g) * sin(phi_g) + By_dipole(r, phi_g) * cos(phi_g));
+
+                }*/
 
                 h_Prho[idx_h] = P[0];
                 h_Pvx[idx_h] = P[1];
@@ -1409,10 +1422,7 @@ __global__ void compute_cell_ez_and_slopes(
             d_above = (ez_face_UR - sh_Ez[il][jl + 1]);
             slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
-            /*if (i == 2 && j == 100)
-            {
-                printf("1: %E, %E, %E \n", sh_Ez[il][jl], sh_Ez[il][jl + 1], ez_face);
-            }*/
+            
         }
 
         // ---------------------------------------------------------------------
@@ -1444,6 +1454,11 @@ __global__ void compute_cell_ez_and_slopes(
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
             slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            /*if (i == 5 && j == 220)
+            {
+                printf("Ephi in Bn: %E, %E, %E, %E, %E, %E, %E;  P = %E, %E \n", sh_Ez[il][jl], sh_Ez[il + 1][jl], ez_face, ez_face_LD, ez_face_RD, ez_face_LU, ez_face_RU, h_Pbx[idx_hface(i + 1, j)], h_Pby[idx_hface(i + 1, j)]);
+            }*/
 
             /*if (i == 2 && j == 100)
             {
@@ -2076,7 +2091,7 @@ int main(void)
     string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем сетку
     string name2 = "save_paper-1_21(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000; // 24000 * 60 * 9; // Число шагов
+    int all_step = 15000; // 24000 * 60 * 9; // Число шагов
     double period_print = 20.0; // С каким периодом выводим в часах
     double time_razmer = 1.0; // 1.41282;
 
@@ -2284,23 +2299,24 @@ int main(void)
             phig = PHI_RIGHT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
-            //h_hFace.Bn[idx_hface(i, j + 1)] = -Bx * sin(phig) + By * cos(phig);
+            //h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j + 1)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Нижняя грань
             rg = r;
             phig = PHI_LEFT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j)] = 0.0;
-            h_hFace.Bn[idx_hface(i, j)] = -Bx * sin(phig) + By * cos(phig);
+            //h_hFace.Bn[idx_hface(i, j)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Правая грань
             rg = R_EDGE(i + 1);
             phig = phi;
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i + 1, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
+            //h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
             //h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
 
             // Левая грань
@@ -2308,7 +2324,8 @@ int main(void)
             phig = phi;
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_vFace.Bn[idx_vface(i, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
+            //h_vFace.Bn[idx_vface(i, j)] = 0.0;
             //h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
         }
     }
@@ -2343,6 +2360,11 @@ int main(void)
 
             h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
             h_cell.By[k] = 0.0;// By_dipole(r, phi);
+            h_cell.Bz[k] = 0.0;
+
+            double Br = Br_test(r, phi);
+            h_cell.Bx[k] = Br * x / dist - Bx_dipole(r, phi);
+            h_cell.By[k] = Br * y / dist - By_dipole(r, phi);
             h_cell.Bz[k] = 0.0;
         }
     }
@@ -2449,7 +2471,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 100 == 0)
+            if (step_ % 1000 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
