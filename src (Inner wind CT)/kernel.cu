@@ -137,8 +137,8 @@
 #define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997
-// 0.0635411     0.317705
-#define Bo_init 0.0635411 //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+// 0.0635411     0.317705   1.58853
+#define Bo_init 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
@@ -975,7 +975,8 @@ __global__ void compute_fluxes(
                         Vr = Vr1;
 
                         if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
-                        if (Vr <= 0.0) Vr = 0.0;
+                        //if (Vr <= 0.0) Vr = 0.0;
+                        if (Vr < -sqrt(ggg * const_p)) Vr = -sqrt(ggg * const_p) / 1.1;
 
                         if (false)
                         {
@@ -1000,7 +1001,7 @@ __global__ void compute_fluxes(
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
                     double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r3 - r);
 
-                    Bphi = Bphi1;  // Можно попробовать снести первым порядком
+                    //Bphi = Bphi1;  // Можно попробовать снести первым порядком
 
 
                     //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);  // Снос мягкий
@@ -1009,10 +1010,13 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
-                    if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
-                    {
-                        Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }
+
+                    //if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
+                    //{
+                    //    Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+                    //}
+                    //Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+
 
 
                     sh_rho[i_l - 1][j_l] = rho_in;
@@ -1386,7 +1390,7 @@ __global__ void compute_cell_ez_and_slopes(
         }
         __syncthreads();
 
-        if (i >= N || j >= M) return;
+        if (i > N || j >= M) return;
 
         int il = tx + 1;  // локальный индекс своей ячейки в shared (с учётом halo=1)
         int jl = ty + 1;
@@ -1421,9 +1425,7 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в праввый узел на грани
             d_below = (ez_face_DR - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_UR - sh_Ez[il][jl + 1]);
-            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
-
-            
+            slot_h_from_left[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые  
         }
 
         // ---------------------------------------------------------------------
@@ -1455,16 +1457,27 @@ __global__ void compute_cell_ez_and_slopes(
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             d_above = (ez_face_RD - sh_Ez[il + 1][jl]);
             slot_v_from_above[idx_node(i + 1, j)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+        }
+        else
+        {
+            double phi_g = PHI_CENTER(j);
+            double ez_face = -(-v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g));
 
-            /*if (i == 5 && j == 220)
-            {
-                printf("Ephi in Bn: %E, %E, %E, %E, %E, %E, %E;  P = %E, %E \n", sh_Ez[il][jl], sh_Ez[il + 1][jl], ez_face, ez_face_LD, ez_face_RD, ez_face_LU, ez_face_RU, h_Pbx[idx_hface(i + 1, j)], h_Pby[idx_hface(i + 1, j)]);
-            }*/
+            // Считаем Ez на горизонтальных гранях для этой и соседней ячейки (чтобы снести в узлы)
 
-            /*if (i == 2 && j == 100)
-            {
-                printf("2: %E, %E, %E \n", sh_Ez[il][jl], sh_Ez[il + 1][jl], ez_face);
-            }*/
+            phi_g = PHI_RIGHT(j - 1);
+            double ez_face_LD = (h_Pbx[idx_hface(i, j)] * cos(phi_g) + h_Pby[idx_hface(i, j)] * sin(phi_g)); // Нижняя левая
+
+            phi_g = PHI_RIGHT(j);
+            double ez_face_LU = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g)); // Нижняя правая
+
+            // Хотим сносить в верхний узел на грани
+            double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
+
+            // Хотим сносить в нижний узел на грани
+            d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face + d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
         }
 
         // Левая v-грань у поверхности звезды
@@ -1497,10 +1510,11 @@ __global__ void compute_cell_ez_and_slopes(
         {
             slot_h_from_left[nd] = 0.0;
         }
-        //else if (i == 0)
-        //{
-        //    slot_h_from_left[nd] = 0.5 * (slot_v_from_below[nd] + slot_v_from_above[nd]);
-        //}
+        else if (i == N)
+        {
+            slot_h_from_left[nd] = slot_h_from_left[nd];
+            //slot_h_from_left[nd] = (slot_h_from_left[nd] + slot_v_from_below[nd] + slot_v_from_above[nd]) / 3.0;
+        }
         else
         {
             slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
@@ -1550,7 +1564,7 @@ __global__ void update_Bn_from_Ez(
 
     // --- Верхняя h-грань этой ячейки: h-грань(i, j+1) ---
     // Идёт от узла (i, j+1) [левый] до узла (i+1, j+1) [правый]
-    if(i < N - 1)
+    if(i <= N - 1)
     {
         double phi1 = PHI_RIGHT(j);
         double r1 = R_EDGE(i + 1);
@@ -2088,12 +2102,12 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
-    string name1 = "save_paper-2_1(350x256).bin";   // Откуда скачиваем сетку
-    string name2 = "save_paper-2_2(350x256).bin";   // Куда сохраняем сетку
+    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    string name1 = "save_paper-2_4(350x256).bin";   // Откуда скачиваем сетку
+    string name2 = "save_paper-2_4(350x256).bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 20; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 20.0; // С каким периодом выводим в часах
+    int all_step = 17000 * 60 * 4; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 5.0; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
 
@@ -2436,6 +2450,8 @@ int main(void)
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
     int num_ = 0;
 
+    std::ofstream out_rashod("rashod_" + name2);
+
     // Глобальный цикл
     for (int step_ = 1; step_ <= all_step; step_++)
     {
@@ -2574,7 +2590,7 @@ int main(void)
             num_++;
 
             // Считаем расход массы
-            if (false)
+            if (true)
             {
                 // Вертикальные грани
                 copyFromDevice(h_vFace.Prho, d_vFace.Prho, vFaceCount);
@@ -2587,33 +2603,57 @@ int main(void)
                 copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
                 double MM = 0.0;
                 double MM2 = 0.0;
-                double ddd = 0.0;
-                double ddd2 = 0.0;
+                double MM3 = 0.0;
+                double Jgas = 0.0;
+                double Jmag = 0.0;
                 for (int k = 0; k < M; ++k)
                 {
                     double r = Rb;
                     double phi = PHI_CENTER(k);
                     double x = r * cos(phi);
+                    double y = r * sin(phi);
 
-                    double r2 = R_EDGE(N / 2 + 1);
-                    double phi2 = PHI_CENTER(k);
-                    double x2 = r2 * cos(phi2);
+                    int i = N - 1;
+                    int i2 = N - 2;
+                    double r1 = R_CENTER(i, k);
+                    double r2 = R_CENTER(i2, k);
 
-                    MM += (2.0 * pi * x * r * DPHI(k)) * h_vFace.Prho[idx_vface(N, k)];
-                    MM2 += (2.0 * pi * x2 * r2 * DPHI(k)) * h_vFace.Prho[idx_vface(N / 2 + 1, k)];
-                    ddd2 += (2.0 * pi * x2 * r2 * DPHI(k));
-                    ddd += (2.0 * pi * x * r * DPHI(k));
+                    int n1 = k * N + i;
+                    int n2 = k * N + i2;
+
+                    double vx = h_cell.Vx[n2] + (h_cell.Vx[n1] - h_cell.Vx[n2]) * (Rb - r2) / (r1 - r2);
+                    double vy = h_cell.Vy[n2] + (h_cell.Vy[n1] - h_cell.Vy[n2]) * (Rb - r2) / (r1 - r2);
+                    double vz = h_cell.Vz[n2] + (h_cell.Vz[n1] - h_cell.Vz[n2]) * (Rb - r2) / (r1 - r2);
+                    double rho = h_cell.rho[n2] + (h_cell.rho[n1] - h_cell.rho[n2]) * (Rb - r2) / (r1 - r2);
+
+
+                    double bx = h_cell.Bx[n2] + (h_cell.Bx[n1] - h_cell.Bx[n2]) * (Rb - r2) / (r1 - r2) + Bx_dipole(Rb, phi);
+                    double by = h_cell.By[n2] + (h_cell.By[n1] - h_cell.By[n2]) * (Rb - r2) / (r1 - r2) + By_dipole(Rb, phi);
+                    double bz = h_cell.Bz[n2] + (h_cell.Bz[n1] - h_cell.Bz[n2]) * (Rb - r2) / (r1 - r2);
+
+                    double Vr = (vx * x + vy * y) / r;
+                    double Vthe = (vx * y - vy * x) / r;
+                    double Br = (bx * x + by * y) / r;
+                    double Bthe = (bx * y - by * x) / r;
+
+                    MM += (2.0 * pi * x * r * DPHI(k)) * h_vFace.Prho[idx_vface(N, k)];               // Расход массы
+                    MM2 += 0.5 * Vr * cos(phi) * DPHI(k);    // Средняя скорость (простое угловое среднее)
+                    MM3 += 2.0 * pi * kv(r) * rho * kv(Vr) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
+                    Jgas += 2.0 * pi * kv(r) * rho * Vr * vz * r * cos(phi) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
+                    Jmag += -2.0 * pi * kv(r) * rho * Br * bz / (4.0 * pi) * r * cos(phi) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
                 }
-                cout << "MM = " << MM * Mass_rashod_razmer << "  10^-6 Msolar/year" << endl;
-                cout << "MM2 = " << MM2 * Mass_rashod_razmer << "  10^-6 Msolar/year" << endl;
 
-                cout << "test = " << ddd << "   = " << 4.0 * pi * kv(Rb) << endl;
-                cout << "test2 = " << ddd2 << "   = " << 4.0 * pi * kv(R_EDGE(N / 2 + 1)) << endl;
+                MM3 = MM3 / MM;
+                //cout << "MM = " << MM * Mass_rashod_razmer << "  10^-6 Msolar/year" << endl;
+
+                out_rashod << host_all_T * time_razmer << " " << MM * Mass_rashod_razmer << " " << MM2 << " " << MM3 << 
+                    " " << Jgas << " " << Jmag << " " << Jgas + Jmag << endl;
             }
 
         }
     }
 
+    out_rashod.close();
 
     // Считаем расход массы на гранях при R = Rb и Rb/2
     if (true)
@@ -2929,8 +2969,8 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
-            double bx = h_cell_phi_average.Bx[j];// +Bx_dipole(r, phi);
-            double by = h_cell_phi_average.By[j];// +By_dipole(r, phi);
+            double bx = h_cell_phi_average.Bx[j] + Bx_dipole(r, phi);
+            double by = h_cell_phi_average.By[j] + By_dipole(r, phi);
 
 
             double Vr = (h_cell_phi_average.Vx[j] * x + h_cell_phi_average.Vy[j] * y) / sqrt(x * x + y * y);
@@ -2955,7 +2995,7 @@ int main(void)
             }
 
             fout1dr << phi << " " << h_cell_phi_average.rho[j] <<//
-                " " << h_cell_phi_average.Vx[j] << " " << h_cell_phi_average.Vy[j] << " " << Vr * 2600 << " " << Vthe * 2600 << " " << h_cell_phi_average.Vz[j] <<
+                " " << h_cell_phi_average.Vx[j] << " " << h_cell_phi_average.Vy[j] << " " << Vr << " " << Vthe << " " << h_cell_phi_average.Vz[j] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell_phi_average.Bz[j] << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
 
