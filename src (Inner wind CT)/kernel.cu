@@ -10,13 +10,13 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 804 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 512 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define Rb (6.0)             // Внешний радиус сетки
-#define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define Rb (15.0)  // (6.0)             // Внешний радиус сетки
+#define qb (1.0099422) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.0099221) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define BX 16   // Размеры блока потоков 
 #define BY 16   // Размеры блока потоков 
@@ -138,7 +138,7 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997
 // 0.0635411     0.317705  0.508329  0.635411    1.58853
-#define Bo_init 0.635411  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.635411 // 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
@@ -1698,7 +1698,7 @@ __global__ void update_cells(
         if (true)
         {
             double dVrdr = fabs(dVr[idx]);
-            if (dVrdr > 20.0) dVrdr = 10.0;
+            if (dVrdr > 30.0) dVrdr = 30.0;
             
 
             double Vr1 = Vx_1 * cos(phi) + Vy_1 * sin(phi);
@@ -1721,13 +1721,13 @@ __global__ void update_cells(
 
             double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVrdr), alpha_line) / kv(r);
 
-            if (fabs(fline) > 10.0)
+            if (fabs(fline) > 20.0)
             {
                 fline = 0.0;
             }
             
             fr += fline;
-            if (fabs(Vr1) > 5.0 || sqrt(kvv(Vx_1, Vy_1, Vz_1)) > 5.0)
+            if (fabs(Vr1) > 10.0 || sqrt(kvv(Vx_1, Vy_1, Vz_1)) > 10.0)
             {
                 fr = 0.0;
             }
@@ -2102,13 +2102,13 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
-    string name1 = "save_D04.bin";   // Откуда скачиваем сетку
-    string name2 = "save_D04.bin";   // Куда сохраняем сетку
+    string name1 = "save_D00LR.bin";   // Откуда скачиваем сетку
+    string name2 = "save_D04LR.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 6; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 0.1; // С каким периодом выводим в часах
+    int all_step = 17000 * 80; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 0.2; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
 
@@ -2369,10 +2369,15 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            /*h_cell.rho[k] = 1.0;
-            h_cell.Vx[k] = 1.0 * x / dist;
-            h_cell.Vy[k] = 1.0 * y / dist;
-            h_cell.Vz[k] = 0.0;*/
+            h_cell.rho[k] = rho;
+            h_cell.Vx[k] = vr * x / dist;
+            h_cell.Vy[k] = vr * y / dist;
+            h_cell.Vz[k] = 0.0;
+
+            //h_cell.rho[k] = 1.0;
+            //h_cell.Vx[k] = 1.0 * x / dist;
+            //h_cell.Vy[k] = 1.0 * y / dist;
+            //h_cell.Vz[k] = 0.0;
 
 
             h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
