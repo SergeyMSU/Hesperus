@@ -126,7 +126,7 @@
 
 #define const_p 0.000119365 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
+#define rho_in 1.2 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
 #define F_grav (-0.0962006)           // Коэффициент перед силой гравитации
 #define F_continuum (0.044022)     // Коэффициент перед силой радиационного давления (континуума)
@@ -572,7 +572,8 @@ __global__ void compute_fluxes(
         double rho_L, rho_R, Vx_L, Vx_R, Vy_L, Vy_R, Vz_L, Vz_R;
         double Bx_L, Bx_R, By_L, By_R, Bz_L, Bz_R;
         double r = R_CENTER(i, j);
-        
+
+        int method = method_rieman;
         
         // 1. Верхняя горизонтальная грань (она заполняется для всех ячеек)
         if (true)
@@ -741,9 +742,18 @@ __global__ void compute_fluxes(
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
 
+
+                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l][j_l + 1] < 1.0E-5))
+                {
+                    method = 0;
+
+                    rho_L = sh_rho[i_l][j_l];
+                    rho_R = sh_rho[i_l][j_l + 1];
+                }
+
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method));
 
                 /*if (i == 3 && j == 3)
                 {
@@ -784,6 +794,7 @@ __global__ void compute_fluxes(
             }
         }
 
+        method = method_rieman;
         // 2. Нижняя горизонтальная грань (она есть только у нижнего ряда ячеек)
         if (j == 0)
         {
@@ -914,9 +925,16 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
+                if (r < 1.5 && (sh_rho[i_l][j_l - 1] < 1.0E-5 || sh_rho[i_l][j_l] < 1.0E-5))
+                {
+                    method = 0;
+                    rho_L = sh_rho[i_l][j_l - 1];
+                    rho_R = sh_rho[i_l][j_l];
+                }
+
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method_rieman));
+                    P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method));
 
                 /*if (tmin < 5.0E-7)
                 {
@@ -937,6 +955,7 @@ __global__ void compute_fluxes(
             }
         }
 
+        method = method_rieman;
         // 3. Правая вертикальная грань (она заполняется для всех ячеек)
         if (true)
         {
@@ -974,9 +993,9 @@ __global__ void compute_fluxes(
 
                         Vr = Vr1;
 
-                        // if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
-                        // if (Vr <= 0.0) Vr = 0.0;
-                        // if (Vr < -sqrt(ggg * const_p)) Vr = -sqrt(ggg * const_p) / 1.1;
+                         if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
+                         //if (Vr <= 0.0) Vr = 0.0;
+                         if (Vr < -sqrt(ggg * const_p)) Vr = -sqrt(ggg * const_p) / 1.1;
 
                         if (false)
                         {
@@ -1016,10 +1035,10 @@ __global__ void compute_fluxes(
                     //    Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
                     //}
 
-                    if (fabs(phi_g) > 0.1)
-                    {
-                        Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
-                    }
+                    //if (fabs(phi_g) > 0.1)
+                    //{
+                    //    Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
+                    //}
 
 
 
@@ -1171,9 +1190,16 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
+                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l + 1][j_l] < 1.0E-5))
+                {
+                    method = 0;
+                    rho_L = sh_rho[i_l][j_l];
+                    rho_R = sh_rho[i_l + 1][j_l];
+                }
+
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman));
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method));
 
                 /*if (tmin < 5.0E-7)
                 {
@@ -1200,6 +1226,7 @@ __global__ void compute_fluxes(
             }
         }
 
+        method = method_rieman;
         // 4. Левая вертикальная грань (она заполняется только у левого ряда ячеек)
         if (i == 0)
         {
@@ -1276,9 +1303,14 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
+                if (r < 1.5 && (rho_L < 1.0E-5 || rho_R < 1.0E-5))
+                {
+                    method = 0;
+                }
+
                 double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
-                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method_rieman);
+                    P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method);
 
                 /*if (tmin < 5.0E-7)
                 {
@@ -1712,7 +1744,7 @@ __global__ void update_cells(
 
             double ff = 1.0;
 
-            if (fabs(dVrdr) > 0.00001)
+            if (fabs(dVrdr) > 0.00001 && fabs(Vr1) > 0.00001)
             {
                 ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
                     ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
@@ -1770,17 +1802,46 @@ __global__ void update_cells(
         //        Vx_1, x);
         //}
 
-        if (rho_2 < 0.0)
-        {
-            rho_2 = 1.0E-7;
-            printf("Error rho < 0 \n");
-            bb = true;
-        }
+        //if (rho_2 <= 0.0)
+        //{
+        //    printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
+        //    rho_2 = 1.0E-7;
+        //    bb = true;
+        //}
 
         // Нижнее ограничение на плотность (в петлях в какой-то момент плотность может стать очень маленькой, а альфвеновская скорость приближается к скорости света)
         if (rho_2 < 1.0E-5 && r < 1.5)
         {
             rho_2 = 1.0E-5;
+
+            Vx[idx] = 0.0;
+            Vy[idx] = 0.0;
+            Vz[idx] = 0.0;
+
+            //if (rho_2 < 5.0E-6)
+            //{
+            //    rho_2 = 5.0E-6;
+            //    Vx[idx] *= rho_1 / rho_2;
+            //    Vy[idx] *= rho_1 / rho_2;
+            //    Vz[idx] *= rho_1 / rho_2;
+            //}
+            //else
+            //{
+            //    Vx[idx] = 0.0;
+            //    Vy[idx] = 0.0;
+            //    Vz[idx] = 0.0;
+            //}
+
+            bb = true;
+        }
+
+        if (rho_2 <= 0.0)
+        {
+            printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
+            rho_2 = 1.0E-7;
+            Vx[idx] = 0.0;
+            Vy[idx] = 0.0;
+            Vz[idx] = 0.0;
             bb = true;
         }
 
@@ -1959,6 +2020,13 @@ __global__ void update_cells(
     }
 
 
+    if (bb == false && r < 1.005 && sqrt(kvv(Vx_2, Vy_2, Vz_2)) > sqrt(ggg * const_p))
+    {
+        Vx[idx] = Vx[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+        Vy[idx] = Vy[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+        Vz[idx] = Vz[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+    }
+
     if (i == print_i && j == print_j)
     {
         printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
@@ -2109,10 +2177,10 @@ int main(void)
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
-    string name1 = "save_2D06L.bin";   // Откуда скачиваем сетку
-    string name2 = "save_2D06L.bin";   // Куда сохраняем сетку
+    string name1 = "save_2D06L-2.bin";   // Откуда скачиваем сетку
+    string name2 = "save_2D06L-3.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 60 * 3; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 60 * 2; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 0.2; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
