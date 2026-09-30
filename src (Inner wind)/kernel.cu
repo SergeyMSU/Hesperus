@@ -105,19 +105,20 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.0000854344  // (0.000447362)     // p = const_p * rho
+#define const_p 0.000119365  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 1.0 // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.0894215)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0369416)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.0111662)     // Коэффициент внутри line-driven силы
+#define F_grav (-0.0892042)           // Коэффициент перед силой гравитации
+#define F_continuum (0.045356)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line (0.0127178)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
 #define alpha_line (0.6) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-#define Bo_init 0.00586533 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+// 0.0590932  0.187446
+#define Bo_init 0.0590932 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init (pi/2.0) // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
@@ -2025,10 +2026,6 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         //Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r4 - r);
         Vr = Vr1; // +(Vr2 - Vr1) / (r2 - r) * (r4 - r);
 
-
-        if (Vr < 0.000001) Vr = Vr1;
-        if (Vr <= 0.0) Vr = 0.0;
-
         double Vphi = 0.0;
 
         //Vthe = u_1.x * sin(phi) + u_1.y * cos(phi);
@@ -2060,7 +2057,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double Bphi1 = -b_1.x * sin(phi) + b_1.y * cos(phi);
         double Bphi2 = -b_2.x * sin(phi) + b_2.y * cos(phi);
         double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r4 - r);
-        //Bphi = 0.0;
+        Bphi = Bphi1;
 
         //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
 
@@ -2118,10 +2115,6 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         //Vr = Vr1 + (Vr2 - Vr1) / (r - r4) * (r41 - r4);
         Vr = Vr1;
 
-
-        if (Vr < 0.000001) Vr = Vr1;
-        if (Vr <= 0.0) Vr = 0.0;
-
         double Vphi = 0.0;
 
 
@@ -2138,13 +2131,13 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         b_41.z = b_4.z;
 
         double Br1 = b_4.x * cos(phi) + b_4.y * sin(phi);
-        double Br = kv(r4) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r4, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
+        double Br = 0.0; // kv(r4)* (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r4, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
 
 
         double Bphi1 = -b_4.x * sin(phi) + b_4.y * cos(phi);
         double Bphi2 = -b_1.x * sin(phi) + b_1.y * cos(phi);
         double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r - r4) * (r41 - r4);
-        //Bphi = 0.0;
+        Bphi = Bphi1;
 
         //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
 
@@ -2751,11 +2744,15 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
                 ff = (pow(1.0 + sigma, 1.0 + alpha_line) - pow(1.0 + sigma * muc, 1.0 + alpha_line)) /
                     ((1.0 + alpha_line) * (1.0 - muc) * sigma * pow(1.0 + sigma, alpha_line));
 
+                //printf("ff = %lf, %lf, %lf \n", ff, sigma, muc);
+
                 if (isnan(ff) == true)
                 {
                     //printf("Problems ff = %lf, %lf, %lf \n", ff, sigma, muc);
                 }
             }
+
+            //ff = ff * 0.4;
 
             //double sigma = dist / ((u_1.x * x + u_1.y * y) / dist) * fabs(dVrdr) - 1.0;
             //double muc = sqrt(1.0 - 1.0 / kv(dist));
@@ -2813,7 +2810,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
     //*T_do = 1.0E-4;
 
-    if (false)
+    if (true)
     {
         s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
         //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
@@ -3096,10 +3093,11 @@ int main(void)
     // Начиная с 1 (to 2) решил увеличить курант c 0.1 до 0.2   -> думаю на 0.3 придётся остановиться
     // в 1 - коллебания на оси простирались примерно до x = 1.37
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
-    string name1 = "save_paper-1_1(350x256).bin";   // Откуда скачиваем
-    string name2 = "save_paper-1_12(350x256).bin";   // Куда сохраняем
-    int all_step = 24000 * 1; // 50000 * 6 * 2;// 1 * 1;  // 294
 
+    string name1 = "save_D000.bin";   // Откуда скачиваем
+    string name2 = "save_D001-m2-.bin";   // Куда сохраняем
+    int all_step = 24000 * 60; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294
+    double time_razmer = 1.53056;
 
     double3* host_s;
     double3* host_u;
@@ -3176,7 +3174,10 @@ int main(void)
         for (size_t k = 0; k < K; k++) 
         {
             bfin.read((char*)&host_s[k].x, sizeof(host_s[k].x));
+
             //bfin.read((char*)&host_s[k].y, sizeof(host_s[k].y));
+            //bfin.read((char*)&host_s[k].z, sizeof(host_s[k].z));
+
             bfin.read((char*)&host_u[k].x, sizeof(host_u[k].x));
             bfin.read((char*)&host_u[k].y, sizeof(host_u[k].y));
             bfin.read((char*)&host_u[k].z, sizeof(host_u[k].z));
@@ -3194,7 +3195,7 @@ int main(void)
         bfin.close();
     }
 
-
+    cout << "Rho proverka = " << host_s2[0].x << endl;
     // ПЕРЕМЕННЫЕ - работаем в цилиндрически координатах
     //  x -> r
     //  y -> z
@@ -3204,7 +3205,7 @@ int main(void)
     // Задаём начальные условия
     
     cout << "Initial conditions: start" << endl;
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -3227,12 +3228,12 @@ int main(void)
             //if (the > pi / 2.0) Br = -Br;
 
 
-            host_s[k] = { 1.0, const_p * 1.0, 0.0};
+            //host_s[k] = { 1.0, const_p * 1.0, 0.0};
             //host_s[k] = { rho, const_p * rho, 0.0};
 
             //host_s[k] = {1.0, 0.000223681};
 
-            host_u[k] = { 1.0 * x / dist, 1.0 * y / dist, 0.0};
+            //host_u[k] = { 1.0 * x / dist, 1.0 * y / dist, 0.0};
             //host_u[k] = { vr * x / dist, vr * y / dist, vphi};
             //host_u[k].z = vphi;
             //host_u[k] = { vr * x / dist, vr * y / dist, 0.0 };
@@ -3394,7 +3395,7 @@ int main(void)
             exit(-1);
         }
 
-        if ((i % (20000 * 10) == 0))
+        if ((i % (20000000 * 10) == 0))
         {
             cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
             cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
@@ -3641,6 +3642,16 @@ int main(void)
                 cout << "Sum div = " << dibB_sum / V_sum << endl;
             }
         }
+
+        if (true)
+        {
+            double T_all;
+            cudaMemcpy(&T_all, TT, sizeof(double), cudaMemcpyDeviceToHost);
+            cudaStatus = cudaDeviceSynchronize();
+            if (T_all * time_razmer > 125.0) break;
+        }
+
+
     }
 
 
@@ -3816,7 +3827,7 @@ int main(void)
         fout1dr.open("param_for_texplot_1d_r.txt");
         fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\", \"f_pole\",  ZONE T = \"HP\"" << endl;
 
-        for (int i = 0; i < N - 1; i++)
+        for (int i = 0; i < N; i++)
         {
             int j = M - 1; // int(M / 2);
             int k = j * N + i;
@@ -3866,13 +3877,16 @@ int main(void)
     {
         ofstream fout1dphi;
         fout1dphi.open("param_for_texplot_1d_phi.txt");
-        fout1dphi << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\",  ZONE T = \"HP\"" << endl;
+        fout1dphi << "TITLE = \"HP\"  VARIABLES = \"phi\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
 
         for (int j = 0; j < M; j++)
         {
-            int i = N - 2;
+            int i = N - 1;
+            int i2 = N - 2;
             int k = j * N + i;
+            int k2 = j * N + i2;
             double r = R_CENTER(i, j);
+            double r2 = R_CENTER(i2, j);
             //double r = R_CENTER(i);
             double phi = PHI_CENTER(j);
 
@@ -3880,33 +3894,43 @@ int main(void)
             x = r * cos(phi);
             y = r * sin(phi);
 
-            double bx = host_b[k].x + Bx_dipole(r, phi);
-            double by = host_b[k].y + By_dipole(r, phi);
+            double vx = host_u[k2].x + (host_u[k].x - host_u[k2].x) * (Rb - r2) / (r - r2);
+            double vy = host_u[k2].y + (host_u[k].y - host_u[k2].y) * (Rb - r2) / (r - r2);
+            double vz = host_u[k2].z + (host_u[k].z - host_u[k2].z) * (Rb - r2) / (r - r2);
+            double rho = host_s[k2].x + (host_s[k].x - host_s[k2].x) * (Rb - r2) / (r - r2);
 
 
-            double Max = 0.0, Temp = 0.0, Max_alf = 0.0;
-            if (host_s[k].x > 0.0)
-            {
-                Max = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z) / (ggg * host_s[k].y / host_s[k].x));
-                Temp = host_s[k].y / host_s[k].x;
-                if (sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z)) > 0.00001)
-                {
-                    Max_alf = sqrt((host_u[k].x * host_u[k].x + host_u[k].y * host_u[k].y + host_u[k].z * host_u[k].z)) * sqrt(4.0 * pi * host_s[k].x) /
-                        sqrt((bx * bx + by * by + host_b[k].z * host_b[k].z));
-                }
-            }
+            double bx = host_b[k2].x + (host_b[k].x - host_b[k2].x) * (Rb - r2) / (r - r2) + Bx_dipole(Rb, phi);
+            double by = host_b[k2].y + (host_b[k].y - host_b[k2].y) * (Rb - r2) / (r - r2) + By_dipole(Rb, phi);
+            double bz = host_b[k2].z + (host_b[k].z - host_b[k2].z) * (Rb - r2) / (r - r2) + By_dipole(Rb, phi);
 
-            //Max_alf = 0.0;
 
-            double Vr = (host_u[k].x * x + host_u[k].y * y) / sqrt(x * x + y * y);
-            double Vthe = (host_u[k].x * y - host_u[k].y * x) / sqrt(x * x + y * y);
+            double Vr = (vx * x + vy * y) / sqrt(x * x + y * y);
+            double Vthe = (vx * y - vy * x) / sqrt(x * x + y * y);
             double Br = (bx * x + by * y) / sqrt(x * x + y * y);
             double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
-            fout1dphi << phi << " " << host_s[k].x << " " << host_s[k].y <<//
-                " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
-                Max << " " << Max_alf << " " << Temp << endl;
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(vx) + kv(vy) + kv(vz)) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(bz)) > 0.00001)
+            {
+                Mach_Alph = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bx) + kv(by) + kv(bz));
+            }
+
+            if (sqrt(kv(bz)) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bz));
+            }
+
+
+            fout1dphi << phi << " " << rho << " " << host_s[k].y <<//
+                " " << vx << " " << vy << " " << Vr << " " << Vthe << " " << vz <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << bz << " " << //
+                Max << " " << Mach_Alph << " " << Mach_Alph_phi  << endl;
         }
 
         fout1dphi.close();
