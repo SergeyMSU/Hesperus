@@ -138,14 +138,17 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.590932 // 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.635411// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
 
-#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
-#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+#define Bx_dipole(r, phi) ( Bo_init * cos(phi) / ((r)*(r)) )
+#define By_dipole(r, phi) ( Bo_init * sin(phi) / ((r)*(r)) )
+
+//#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+//#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
@@ -2033,7 +2036,6 @@ __global__ void update_cells(
     }
 }
 
-
 void test_polar_geometry(void)
 {
     // Печатает именно границы всех ячеек
@@ -2178,9 +2180,10 @@ int main(void)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
     string name1 = "save_D00.bin";   // Откуда скачиваем сетку
-    string name2 = "save_D005.bin";   // Куда сохраняем сетку
+    //string name1 = "save_D00-test.bin";   // Откуда скачиваем сетку
+    string name2 = "save_D00-test.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 170; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 8; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 1.0; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
