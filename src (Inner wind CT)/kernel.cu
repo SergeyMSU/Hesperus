@@ -138,17 +138,14 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.635411// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.187446// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
 
 
-#define Bx_dipole(r, phi) ( Bo_init * cos(phi) / ((r)*(r)) )
-#define By_dipole(r, phi) ( Bo_init * sin(phi) / ((r)*(r)) )
-
-//#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
-//#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
@@ -995,6 +992,7 @@ __global__ void compute_fluxes(
                         double Vr2 = sh_Vx[i_l + 1][j_l] * cos(phi_g) + sh_Vy[i_l + 1][j_l] * sin(phi_g);
 
                         Vr = Vr1;
+                        //Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r3 - r);
 
                          if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
                          //if (Vr <= 0.0) Vr = 0.0;
@@ -1734,9 +1732,14 @@ __global__ void update_cells(
         double fr = 0.0;
         fr = (F_grav + F_continuum) * rho_1 / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
 
-        if (true)
+        if (false)
         {
             double dVrdr = fabs(dVr[idx]);
+            /*const double tiny = 1e-12;
+            double dVrdr = dVr[idx];
+            if (dVrdr < tiny) dVrdr = tiny;*/
+
+
             if (dVrdr > 30.0) dVrdr = 30.0;
             
 
@@ -1760,16 +1763,45 @@ __global__ void update_cells(
 
             double fline = F_line * ff * pow(rho_1, 1.0 - alpha_line) * pow(fabs(dVrdr), alpha_line) / kv(r);
 
-            if (fabs(fline) > 20.0)
+            /*if (fabs(fline) > 20.0)
             {
                 fline = 0.0;
-            }
+            }*/
             
             fr += fline;
-            if (fabs(Vr1) > 10.0 || sqrt(kvv(Vx_1, Vy_1, Vz_1)) > 10.0)
+        }
+
+        if (true)
+        {
+            double Vr1 = Vx_1 * cos(phi) + Vy_1 * sin(phi);
+            double dvdr = dVr[idx];
+            const double tiny = 1e-12;
+            if (dvdr < tiny) dvdr = tiny;   // только положительный, как у ud-Doula
+            double Rstar = 1.0;
+            double sigma = (1.0 - Vr1 / (r * dvdr)) * (Rstar * Rstar) / (r * r);
+            double oma = 1.0 + alpha_line;
+            double fdisk = 1.0;
+            if (sigma >= 1.0) 
             {
-                fr = 0.0;
+                fdisk = 1.0 / oma;
             }
+            else if (sigma < -1.0e10) 
+            {
+                fdisk = pow(-sigma, alpha_line) / oma;
+            }
+            else if (fabs(sigma) > 1.0e-3) 
+            {
+                fdisk = (1.0 - pow(1.0 - sigma, oma)) / (sigma * oma);
+            }
+            else 
+            {
+                // Разложение около sigma = 0, как у ud-Doula
+                fdisk = 1.0 - 0.5 * alpha_line * sigma *
+                    (1.0 + 0.3333333 * (1.0 - alpha_line) * sigma);
+            }
+
+            double fline = F_line * fdisk * pow(rho_1, 1.0 - alpha_line) * pow(dvdr, alpha_line) / kv(r);
+            fr += fline;
         }
 
 
@@ -2179,12 +2211,11 @@ int main(void)
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
-    string name1 = "save_D00.bin";   // Откуда скачиваем сетку
-    //string name1 = "save_D00-test.bin";   // Откуда скачиваем сетку
-    string name2 = "save_D00-test.bin";   // Куда сохраняем сетку
+    string name1 = "save_D000.bin";   // Откуда скачиваем сетку
+    string name2 = "save_D003.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
     int all_step = 17000 * 8; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 1.0; // С каким периодом выводим в часах
+    double period_print = 30.0; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
 
@@ -3028,6 +3059,124 @@ int main(void)
             }
 
             fout1dr << phi << " " << rho <<//
+                " " << vx << " " << vy << " " << Vr << " " << Vthe << " " << vz <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << bz << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+        }
+
+        fout1dr.close();
+    }
+
+    // Печатаем 1д файл по phi у основания
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_phi_R=1.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"phi\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",\"Mach_Alph\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
+
+        cout << "Print 1d phi at R = " << R_CENTER(10, 1) << endl;
+        for (int j = 0; j < M; j++)
+        {
+            int i = 10;
+            int k = j * N + i;
+            double r = R_CENTER(i, j);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double vx = h_cell.Vx[k];
+            double vy = h_cell.Vy[k];
+            double vz = h_cell.Vz[k];
+            double rho = h_cell.rho[k];
+
+
+            double bx = h_cell.Bx[k] + Bx_dipole(Rb, phi);
+            double by = h_cell.By[k] + By_dipole(Rb, phi);
+            double bz = h_cell.Bz[k];
+
+
+            double Vr = (vx * x + vy * y) / sqrt(x * x + y * y);
+            double Vthe = (vx * y - vy * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(vx) + kv(vy) + kv(vz)) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(bz)) > 0.00001)
+            {
+                Mach_Alph = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bx) + kv(by) + kv(bz));
+            }
+
+            if (sqrt(kv(bz)) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bz));
+            }
+
+            fout1dr << r << " " << phi << " " << rho <<//
+                " " << vx << " " << vy << " " << Vr << " " << Vthe << " " << vz <<
+                " " << bx << " " << by << " " << Br << " " << Bthe << " " << bz << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
+        }
+
+        fout1dr.close();
+    }
+
+    // Печатаем 1д файл по phi в серединке
+    if (true)
+    {
+        ofstream fout1dr;
+        fout1dr.open("param_for_texplot_1d_phi_R=2.txt");
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"phi\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\",\"Mach_Alph\",\"Mach_Alph_phi\",  ZONE T = \"HP\"" << endl;
+
+        cout << "Print 1d phi at R = " << R_CENTER(200, 1) << endl;
+        for (int j = 0; j < M; j++)
+        {
+            int i = 200;
+            int k = j * N + i;
+            double r = R_CENTER(i, j);
+            double phi = PHI_CENTER(j);
+
+            double x, y;
+            x = r * cos(phi);
+            y = r * sin(phi);
+
+            double vx = h_cell.Vx[k];
+            double vy = h_cell.Vy[k];
+            double vz = h_cell.Vz[k];
+            double rho = h_cell.rho[k];
+
+
+            double bx = h_cell.Bx[k] + Bx_dipole(Rb, phi);
+            double by = h_cell.By[k] + By_dipole(Rb, phi);
+            double bz = h_cell.Bz[k];
+
+
+            double Vr = (vx * x + vy * y) / sqrt(x * x + y * y);
+            double Vthe = (vx * y - vy * x) / sqrt(x * x + y * y);
+            double Br = (bx * x + by * y) / sqrt(x * x + y * y);
+            double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
+
+            double Max = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
+
+            Max = sqrt((kv(vx) + kv(vy) + kv(vz)) / (ggg * const_p));
+
+            if (sqrt(kv(bx) + kv(by) + kv(bz)) > 0.00001)
+            {
+                Mach_Alph = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bx) + kv(by) + kv(bz));
+            }
+
+            if (sqrt(kv(bz)) > 0.00001)
+            {
+                Mach_Alph_phi = sqrt((kv(vx) + kv(vy) + kv(vz))) * sqrt(4.0 * pi * rho) /
+                    sqrt(kv(bz));
+            }
+
+            fout1dr << r << " " << phi << " " << rho <<//
                 " " << vx << " " << vy << " " << Vr << " " << Vthe << " " << vz <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << bz << " " << Max << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
