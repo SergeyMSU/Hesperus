@@ -8,6 +8,8 @@
 #include <vector>
 #include <string>
 #include "Header.h"
+#include "cooling.h"
+#include "cooling_device.cuh"
 
 #define Omega 0.0
 #define N 350 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
@@ -127,6 +129,7 @@
 #define const_p 0.000119365 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
 #define rho_in 1.0 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
+#define p_in (rho_in * const_p) 
 
 #define F_grav (-0.0875475)           // Коэффициент перед силой гравитации
 #define F_continuum (0.0449595)     // Коэффициент перед силой радиационного давления (континуума)
@@ -138,7 +141,7 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.0// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.0// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
@@ -209,12 +212,12 @@ __host__ __device__ __forceinline__ int idx_node(int i, int j) { return j * (N +
 
 // Переменные в центрах ячеек
 struct CellVars {
-    double* rho, * Vx, * Vy, * Vz, * Bx, * By, * Bz, * dVr;
+    double* rho, * p, * Vx, * Vy, * Vz, * Bx, * By, * Bz, * dVr;
 };
 
 // Переменные на гранях (потоки или другие величины)
 struct FaceVars {
-    double* Prho, * Pvx, * Pvy, * Pvz, * Pbx, * Pby, * Pbz, * Bn, * SL, * SR;
+    double* Prho, * Pp, * Pvx, * Pvy, * Pvz, * Pbx, * Pby, * Pbz, * Bn, * SL, * SR;
 };
 
 // Переменные в узлах (например, электрическое поле)
@@ -451,16 +454,17 @@ __device__ double get_cell(const double* field, int N_, int M_, int i, int j)
 
 
 __global__ void compute_fluxes(
-    const double* rho, const double* Vx, const double* Vy, const double* Vz,
+    const double* rho, const double* p, const double* Vx, const double* Vy, const double* Vz,
     const double* Bx, const double* By, const double* Bz, double* dVr,
-    double* h_Prho, double* h_Pvx, double* h_Pvy, double* h_Pvz,
+    double* h_Prho, double* h_Pp, double* h_Pvx, double* h_Pvy, double* h_Pvz,
     double* h_Pbx, double* h_Pby, double* h_Pbz, const double* h_Bn, double* h_SL, double* h_SR,
-    double* v_Prho, double* v_Pvx, double* v_Pvy, double* v_Pvz,
+    double* v_Prho, double* v_Pp, double* v_Pvx, double* v_Pvy, double* v_Pvz,
     double* v_Pbx, double* v_Pby, double* v_Pbz, const double* v_Bn, double* v_SL, double* v_SR,
     double* dT)
 {
     // Shared memory для всех 7 переменных ячеек
     __shared__ double sh_rho[SHARED_I][SHARED_J];
+    __shared__ double sh_p[SHARED_I][SHARED_J];
     __shared__ double sh_Vx[SHARED_I][SHARED_J];
     __shared__ double sh_Vy[SHARED_I][SHARED_J];
     __shared__ double sh_Vz[SHARED_I][SHARED_J];
@@ -493,6 +497,7 @@ __global__ void compute_fluxes(
             int j_glob = load_j_start + j_local;
 
             sh_rho[i_local][j_local] = get_cell(rho, N, M, i_glob, j_glob);
+            sh_p[i_local][j_local] = get_cell(p, N, M, i_glob, j_glob);
             sh_Vx[i_local][j_local] = get_cell(Vx, N, M, i_glob, j_glob);
             sh_Vy[i_local][j_local] = get_cell(Vy, N, M, i_glob, j_glob);
             sh_Vz[i_local][j_local] = get_cell(Vz, N, M, i_glob, j_glob);
@@ -533,6 +538,7 @@ __global__ void compute_fluxes(
         sh_By[i_l][j_l + 1] = sh_By[i_l][j_l];
         sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
         sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];
+        sh_p[i_l][j_l + 1] = sh_p[i_l][j_l];
 
         sh_Vz[i_l][j_l + 2] = -sh_Vz[i_l][j_l - 1];
         sh_Vx[i_l][j_l + 2] = -sh_Vx[i_l][j_l - 1];
@@ -541,6 +547,7 @@ __global__ void compute_fluxes(
         sh_Vy[i_l][j_l + 2] = sh_Vy[i_l][j_l - 1];
         sh_By[i_l][j_l + 2] = sh_By[i_l][j_l - 1];
         sh_rho[i_l][j_l + 2] = sh_rho[i_l][j_l - 1];
+        sh_p[i_l][j_l + 2] = sh_p[i_l][j_l - 1];
     }
 
     if (j == 0)
@@ -552,6 +559,7 @@ __global__ void compute_fluxes(
         sh_By[i_l][j_l - 1] = sh_By[i_l][j_l];
         sh_Vy[i_l][j_l - 1] = sh_Vy[i_l][j_l];
         sh_rho[i_l][j_l - 1] = sh_rho[i_l][j_l];
+        sh_p[i_l][j_l - 1] = sh_p[i_l][j_l];
 
         sh_Vz[i_l][j_l - 2] = -sh_Vz[i_l][j_l + 1];
         sh_Vx[i_l][j_l - 2] = -sh_Vx[i_l][j_l + 1];
@@ -559,7 +567,7 @@ __global__ void compute_fluxes(
         sh_Bz[i_l][j_l - 2] = -sh_Bz[i_l][j_l + 1];
         sh_Vy[i_l][j_l - 2] = sh_Vy[i_l][j_l + 1];
         sh_By[i_l][j_l - 2] = sh_By[i_l][j_l + 1];
-        sh_rho[i_l][j_l - 2] = sh_rho[i_l][j_l + 1];
+        sh_p[i_l][j_l - 2] = sh_p[i_l][j_l + 1];
     }
     __syncthreads();
 
@@ -569,7 +577,7 @@ __global__ void compute_fluxes(
     // Считаем потоки
     if (i < N && j < M)
     {
-        double rho_L, rho_R, Vx_L, Vx_R, Vy_L, Vy_R, Vz_L, Vz_R;
+        double rho_L, rho_R, p_L, p_R, Vx_L, Vx_R, Vy_L, Vy_R, Vz_L, Vz_R;
         double Bx_L, Bx_R, By_L, By_R, Bz_L, Bz_R;
         double r = R_CENTER(i, j);
 
@@ -616,6 +624,11 @@ __global__ void compute_fluxes(
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
                 rho_R = linear(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
+
+                p_L = linear(phi3, sh_p[i_l][j_l - 1], phi1, sh_p[i_l][j_l], phi2, sh_p[i_l][j_l + 1], phi_g);
+                if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
+                p_R = linear(phi4, sh_p[i_l][j_l + 2], phi2, sh_p[i_l][j_l + 1], phi1, sh_p[i_l][j_l], phi_g);
+                if (p_R <= 0.0) p_R = sh_p[i_l][j_l + 1];
 
                 Vz_L = linear(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
                 Vz_R = linear(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
@@ -698,6 +711,7 @@ __global__ void compute_fluxes(
                 if (j == M - 1)
                 {
                     rho_L = rho_R = sh_rho[i_l][j_l + 1];
+                    p_L = p_R = sh_p[i_l][j_l + 1];
                     Vx_L = Vx_R = sh_Vx[i_l][j_l + 1];
                     Bx_L = Bx_R = sh_Bx[i_l][j_l + 1];
                     Bz_L = Bz_R = sh_Bz[i_l][j_l + 1];
@@ -751,8 +765,8 @@ __global__ void compute_fluxes(
                     rho_R = sh_rho[i_l][j_l + 1];
                 }
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method));
 
                 /*if (i == 3 && j == 3)
@@ -782,6 +796,7 @@ __global__ void compute_fluxes(
                 }*/
 
                 h_Prho[idx_h] = P[0];
+                h_Pp[idx_h] = P[7];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
                 h_Pvz[idx_h] = P[3];
@@ -814,6 +829,11 @@ __global__ void compute_fluxes(
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
                 rho_R = linear(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
+
+                p_L = linear(phi3, sh_p[i_l][j_l - 2], phi1, sh_p[i_l][j_l - 1], phi2, sh_p[i_l][j_l], phi_g);
+                if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
+                p_R = linear(phi4, sh_p[i_l][j_l + 1], phi2, sh_p[i_l][j_l], phi1, sh_p[i_l][j_l - 1], phi_g);
+                if (p_R <= 0.0) p_R = sh_p[i_l][j_l + 1];
 
                 Vz_L = linear(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
                 Vz_R = linear(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
@@ -932,8 +952,8 @@ __global__ void compute_fluxes(
                     rho_R = sh_rho[i_l][j_l];
                 }
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, -sin(phi_g), cos(phi_g), 0.0, SL, SR, DPHI(j) * r, method));
 
                 /*if (tmin < 5.0E-7)
@@ -943,6 +963,7 @@ __global__ void compute_fluxes(
                 }*/
 
                 h_Prho[idx_h] = P[0];
+                h_Pp[idx_h] = P[7];
                 h_Pvx[idx_h] = P[1];
                 h_Pvy[idx_h] = P[2];
                 h_Pvz[idx_h] = P[3];
@@ -1044,6 +1065,7 @@ __global__ void compute_fluxes(
 
 
                     sh_rho[i_l - 1][j_l] = rho_in;
+                    sh_p[i_l - 1][j_l] = p_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
                     sh_Vy[i_l - 1][j_l] = (Vr * sin(phi_g) + Vphi * cos(phi_g));
                     sh_Vz[i_l - 1][j_l] = V_phi_init * sin(pi / 2.0 - phi_g);
@@ -1058,6 +1080,11 @@ __global__ void compute_fluxes(
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
                 rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
+
+                p_L = linear(r3, sh_p[i_l - 1][j_l] * kv(r3), r, sh_p[i_l][j_l] * kv(r), r2, sh_p[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
+                p_R = linear(r4, sh_p[i_l + 2][j_l] * kv(r4), r2, sh_p[i_l + 1][j_l] * kv(r2), r, sh_p[i_l][j_l] * kv(r), r_g) / kv(r_g);
+                if (p_R <= 0.0) p_R = sh_p[i_l + 1][j_l];
 
                 Vz_L = linear(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
                 Vz_R = linear(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
@@ -1198,8 +1225,8 @@ __global__ void compute_fluxes(
                     rho_R = sh_rho[i_l + 1][j_l];
                 }
 
-                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method));
 
                 /*if (tmin < 5.0E-7)
@@ -1215,6 +1242,7 @@ __global__ void compute_fluxes(
                 }*/
 
                 v_Prho[idx_h] = P[0];
+                v_Pp[idx_h] = P[7];
                 v_Pvx[idx_h] = P[1];
                 v_Pvy[idx_h] = P[2];
                 v_Pvz[idx_h] = P[3];
@@ -1246,6 +1274,9 @@ __global__ void compute_fluxes(
                 rho_L = sh_rho[i_l - 1][j_l];
                 rho_R = rho_L; // linear(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
                 //if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l];
+
+                p_L = sh_p[i_l - 1][j_l];
+                p_R = p_L;
 
                 Vz_L = sh_Vz[i_l - 1][j_l];
                 Vz_R = Vz_L; // linear(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
@@ -1309,8 +1340,8 @@ __global__ void compute_fluxes(
                     method = 0;
                 }
 
-                double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, const_p * rho_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
-                    rho_R, 0.0, const_p * rho_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
+                double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
+                    rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method);
 
                 /*if (tmin < 5.0E-7)
@@ -1334,6 +1365,7 @@ __global__ void compute_fluxes(
 
                 
                 v_Prho[idx_h] = P[0];
+                v_Pp[idx_h] = P[7];
                 v_Pvx[idx_h] = P[1];
                 v_Pvy[idx_h] = P[2];
                 v_Pvz[idx_h] = P[3];
@@ -1686,11 +1718,11 @@ __global__ void update_Bn_from_Ez(
 }
 
 __global__ void update_cells(
-    double* rho, double* Vx, double* Vy, double* Vz,
+    double* rho, double* p, double* Vx, double* Vy, double* Vz,
     double* Bx, double* By, double* Bz, const double* dVr,
-    const double* h_Prho, const double* h_Pvx, const double* h_Pvy, const double* h_Pvz,
+    const double* h_Prho, const double* h_Pp, const double* h_Pvx, const double* h_Pvy, const double* h_Pvz,
     const double* h_Pbz, const double* h_Bn,
-    const double* v_Prho, const double* v_Pvx, const double* v_Pvy, const double* v_Pvz,
+    const double* v_Prho, const double* v_Pp, const double* v_Pvx, const double* v_Pvy, const double* v_Pvz,
     const double* v_Pbz, const double* v_Bn,
     const double* dT)
 {
@@ -1702,6 +1734,7 @@ __global__ void update_cells(
     int idx = j * N + i;
 
     double rho_1 = rho[idx];
+    double p_1 = p[idx];
     double Vx_1 = Vx[idx];
     double Vy_1 = Vy[idx];
     double Vz_1 = Vz[idx];
@@ -1711,7 +1744,7 @@ __global__ void update_cells(
     double dV = CELL_AREA(i, j);
 
 
-    double S1, S2, S3, rho_2, Vx_2, Vy_2, Vz_2, Bz_2;
+    double S1, S2, S3, rho_2, p_2, Vx_2, Vy_2, Vz_2, Bx_2, By_2, Bz_2;
     S1 = DPHI(j) * R_EDGE(i + 1);
     S2 = DPHI(j) * R_EDGE(i);
     S3 = DR(i);
@@ -1962,6 +1995,8 @@ __global__ void update_cells(
         Bz[idx] = Bz_2;
     }
 
+    
+
     // Bx, By
     // Делаем снос из Bn на гранях
 
@@ -2035,25 +2070,42 @@ __global__ void update_cells(
 
         double phi_c = PHI_CENTER(j);
 
-        Bx[idx] = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
-        By[idx] = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
-
-        //if (fabs(Bx[idx]) > 0.0000001)
-        //{
-        //    printf("ERROR BB = %d, %lf, %E, %E\n", idx, phi, Bx[idx], By[idx]);
-        //}
-
-        /*if (i == 0 && (j == 128 || j == 127))
-        {
-            printf("BB = %d, %lf, %E, %E\n", j, phi, Bx[idx], By[idx]);
-        }*/
-
-        //if (i == 1 && j == 100)
-        //{
-        //    printf("CELL 1;100 =: %E, %E, %E, %E \n ", Bx[idx], By[idx], Bx_1, By_1);
-        //}
+        Bx[idx] = Bx_2 = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
+        By[idx] = By_2 = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
     }
 
+    // p
+    if (bb == false)
+    {
+        double P = 0.0;
+
+        P += v_Pp[j * (N + 1) + (i + 1)] * S1;   // r+
+        P -= v_Pp[j * (N + 1) + i] * S2;       // r-
+        P += h_Pp[(j + 1) * N + i] * S3;  // phi+
+        P -= h_Pp[j * N + i] * S3;      // phi-
+
+        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P)//
+            / dV - dTime * (((U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) + p_1 + kvv(Bx_1, By_1, Bz_1) / cpi8) * Vx_1 - Bx_1 * skk(Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) / cpi4) / x) //
+            - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
+
+
+        //double Temp = p_2 / rho_2 / const_p;
+
+        //// Если температура меньше эффективной температуры поверхности звезды
+        //if (Temp < 1.0)
+        //{
+        //    Temp = 1.0;
+        //    p_2 = const_p * rho_2;
+        //}
+
+        if (p_2 < 1E-11)
+        {
+            p_2 = 1E-11;
+        }
+
+
+        p[idx] = p_2;
+    }
 
     if (bb == false && r < 1.005 && sqrt(kvv(Vx_2, Vy_2, Vz_2)) > sqrt(ggg * const_p))
     {
@@ -2129,14 +2181,14 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
         {
             fout5.open(to_string(num) + "_param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"p\", \"T\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral, SOLUTIONTIME = " << time << endl;
         }
         else
         {
             fout5.open("param_for_texplot_all.txt");
 
-            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
+            fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"Lg_rho\",  \"p\", \"T\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"|B|\", \"Mach\", \"Mach_R\", \"Mach_Alph\", \"Mach_Alph_phi\",  ZONE T = \"HP\", N = " << K //
                 << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
         }
 
@@ -2180,7 +2232,7 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
             }
 
             fout5 << x << " " << y << " " << h_cell.rho[k] * 4.3E-11 << " " << log10(h_cell.rho[k] * 4.3E-11) <<//
-                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
+                " " << h_cell.p[k] << " " << 50000.0 * h_cell.p[k]  / h_cell.rho[k] / const_p << " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
                 " " << Max_R << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
@@ -2214,7 +2266,7 @@ int main(void)
     string name1 = "save_D000.bin";   // Откуда скачиваем сетку
     string name2 = "save_D000-test_compare.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 4; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 10000 * 1; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;
@@ -2251,11 +2303,19 @@ int main(void)
 
     CellVars  h_cell_phi_average;
 
+    // 1) Загружаем таблицы COOLING на host
+    CoolingTablesHost host;
+    load_cooling_tables(host);   // директория с *.txt
+
+    // 2) Копируем COOLING на device
+    CoolingTablesDevice dev = to_device(host);
+
     // Выделение памяти для всех массивов
     if (true)
     {
         // --- Ячейки (7 массивов по cellCount) ---
         h_cell.rho = allocateHost<double>(cellCount);
+        h_cell.p = allocateHost<double>(cellCount);
         h_cell.Vx = allocateHost<double>(cellCount);
         h_cell.Vy = allocateHost<double>(cellCount);
         h_cell.Vz = allocateHost<double>(cellCount);
@@ -2265,6 +2325,7 @@ int main(void)
         h_cell.dVr = allocateHost<double>(cellCount);
 
         h_cell_phi_average.rho = allocateHost<double>(M);
+        h_cell_phi_average.p = allocateHost<double>(M);
         h_cell_phi_average.Vx = allocateHost<double>(M);
         h_cell_phi_average.Vy = allocateHost<double>(M);
         h_cell_phi_average.Vz = allocateHost<double>(M);
@@ -2274,6 +2335,7 @@ int main(void)
         h_cell_phi_average.dVr = allocateHost<double>(M);
 
         d_cell.rho = allocateDevice<double>(cellCount);
+        d_cell.p = allocateDevice<double>(cellCount);
         d_cell.Vx = allocateDevice<double>(cellCount);
         d_cell.Vy = allocateDevice<double>(cellCount);
         d_cell.Vz = allocateDevice<double>(cellCount);
@@ -2286,6 +2348,7 @@ int main(void)
 
         // --- Горизонтальные грани (8 массивов по hFaceCount) ---
         h_hFace.Prho = allocateHost<double>(hFaceCount);
+        h_hFace.Pp = allocateHost<double>(hFaceCount);
         h_hFace.Pvx = allocateHost<double>(hFaceCount);
         h_hFace.Pvy = allocateHost<double>(hFaceCount);
         h_hFace.Pvz = allocateHost<double>(hFaceCount);
@@ -2297,6 +2360,7 @@ int main(void)
         h_hFace.SR = allocateHost<double>(hFaceCount);
 
         d_hFace.Prho = allocateDevice<double>(hFaceCount);
+        d_hFace.Pp = allocateDevice<double>(hFaceCount);
         d_hFace.Pvx = allocateDevice<double>(hFaceCount);
         d_hFace.Pvy = allocateDevice<double>(hFaceCount);
         d_hFace.Pvz = allocateDevice<double>(hFaceCount);
@@ -2309,6 +2373,7 @@ int main(void)
 
         // --- Вертикальные грани (8 массивов по vFaceCount) ---
         h_vFace.Prho = allocateHost<double>(vFaceCount);
+        h_vFace.Pp = allocateHost<double>(vFaceCount);
         h_vFace.Pvx = allocateHost<double>(vFaceCount);
         h_vFace.Pvy = allocateHost<double>(vFaceCount);
         h_vFace.Pvz = allocateHost<double>(vFaceCount);
@@ -2320,6 +2385,7 @@ int main(void)
         h_vFace.SR = allocateHost<double>(vFaceCount);
 
         d_vFace.Prho = allocateDevice<double>(vFaceCount);
+        d_vFace.Pp = allocateDevice<double>(vFaceCount);
         d_vFace.Pvx = allocateDevice<double>(vFaceCount);
         d_vFace.Pvy = allocateDevice<double>(vFaceCount);
         d_vFace.Pvz = allocateDevice<double>(vFaceCount);
@@ -2515,11 +2581,24 @@ int main(void)
         }
     }
     
+
+    // Задаём давление
+    if (true)
+    {
+        for (int k = 0; k < K; k++)  // Заполняем начальные условия
+        {
+            h_cell.p[k] = h_cell.rho[k] * const_p;
+        }
+    }
+
+
+
     // Копирование всех массивов на device
     if (true)
     {
         // Ячейки
         copyToDevice(d_cell.rho, h_cell.rho, cellCount);
+        copyToDevice(d_cell.p, h_cell.p, cellCount);
         copyToDevice(d_cell.Vx, h_cell.Vx, cellCount);
         copyToDevice(d_cell.Vy, h_cell.Vy, cellCount);
         copyToDevice(d_cell.Vz, h_cell.Vz, cellCount);
@@ -2529,6 +2608,7 @@ int main(void)
 
         // Горизонтальные грани
         copyToDevice(d_hFace.Prho, h_hFace.Prho, hFaceCount);
+        copyToDevice(d_hFace.Pp, h_hFace.Pp, hFaceCount);
         copyToDevice(d_hFace.Pvx, h_hFace.Pvx, hFaceCount);
         copyToDevice(d_hFace.Pvy, h_hFace.Pvy, hFaceCount);
         copyToDevice(d_hFace.Pvz, h_hFace.Pvz, hFaceCount);
@@ -2539,6 +2619,7 @@ int main(void)
 
         // Вертикальные грани
         copyToDevice(d_vFace.Prho, h_vFace.Prho, vFaceCount);
+        copyToDevice(d_vFace.Pp, h_vFace.Pp, vFaceCount);
         copyToDevice(d_vFace.Pvx, h_vFace.Pvx, vFaceCount);
         copyToDevice(d_vFace.Pvy, h_vFace.Pvy, vFaceCount);
         copyToDevice(d_vFace.Pvz, h_vFace.Pvz, vFaceCount);
@@ -2580,11 +2661,11 @@ int main(void)
 
         
         compute_fluxes << <grid, block >> > (
-            d_cell.rho, d_cell.Vx, d_cell.Vy, d_cell.Vz,
+            d_cell.rho, d_cell.p, d_cell.Vx, d_cell.Vy, d_cell.Vz,
             d_cell.Bx, d_cell.By, d_cell.Bz, d_cell.dVr,
-            d_hFace.Prho, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
+            d_hFace.Prho, d_hFace.Pp, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
             d_hFace.Pbx, d_hFace.Pby, d_hFace.Pbz, d_hFace.Bn, d_hFace.SL, d_hFace.SR,
-            d_vFace.Prho, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
+            d_vFace.Prho, d_vFace.Pp, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
             d_vFace.Pbx, d_vFace.Pby, d_vFace.Pbz, d_vFace.Bn, d_vFace.SL, d_vFace.SR, dT);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
@@ -2602,7 +2683,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 5000 == 0)
+            if (step_ % 500 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
@@ -2655,11 +2736,11 @@ int main(void)
 
 
         update_cells << <grid, block >> > (
-            d_cell.rho, d_cell.Vx, d_cell.Vy, d_cell.Vz,
+            d_cell.rho, d_cell.p, d_cell.Vx, d_cell.Vy, d_cell.Vz,
             d_cell.Bx, d_cell.By, d_cell.Bz, d_cell.dVr,
-            d_hFace.Prho, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
+            d_hFace.Prho, d_hFace.Pp, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
             d_hFace.Pbz, d_hFace.Bn,
-            d_vFace.Prho, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
+            d_vFace.Prho, d_vFace.Pp, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
             d_vFace.Pbz, d_vFace.Bn, dT);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
@@ -2676,6 +2757,7 @@ int main(void)
         if (host_all_T * time_razmer > period_print * num_)
         {
             copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+            copyFromDevice(h_cell.p, d_cell.p, cellCount);
             copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
             copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
             copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
@@ -2833,6 +2915,7 @@ int main(void)
     if (true)
     {
         copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+        copyFromDevice(h_cell.p, d_cell.p, cellCount);
         copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
         copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
         copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
@@ -3286,6 +3369,10 @@ int main(void)
         cout << "Average Mass rashod N = " << 87.4214 * Mas << "  or  " << 87.4214 * Mas2 << " x 10^-8 MasSolar / year" << endl;
         cout << "Average Vr = " << Vel << endl;
     }
+
+
+    free_device_tables(dev);
+    free_host_tables(host);
 
 
     return 0;
