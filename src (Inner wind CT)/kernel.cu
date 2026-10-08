@@ -2214,7 +2214,7 @@ int main(void)
     string name1 = "save_D000.bin";   // Откуда скачиваем сетку
     string name2 = "save_D000-test_compare.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 4; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 5; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
     double time_razmer = 1.53056;
     double Mass_rashod_razmer = 286.211;

@@ -4,47 +4,6 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
-// ------------------------------------------------------------------
-// ”ниверсальный интерпол€тор по равномерной сетке.
-// „итает “ќЋ№ ќ два соседних значени€ из global memory (через __ldg).
-// ------------------------------------------------------------------
-__device__ __forceinline__
-double interp_uniform(double x, const double* __restrict__ vals,
-    double x_min, double dx, int n)
-{
-    double t = (x - x_min) / dx;
-    if (t <= 0.0)              return __ldg(&vals[0]);
-    if (t >= (double)(n - 1))  return __ldg(&vals[n - 1]);
-    int i = (int)t;
-    double w = t - i;
-    double v0 = __ldg(&vals[i]);
-    double v1 = __ldg(&vals[i + 1]);
-    return v0 + w * (v1 - v0);
-}
-
-// ------------------------------------------------------------------
-// Lambda(T), erg cm^3 s^-1.
-// T < 1e4  ->  floor
-// T > 1e8  ->  аналитика  Lambda = 2.3e-19 * T^{-0.54}
-// ------------------------------------------------------------------
-__device__ __forceinline__
-double Lambda_of_T(double T, const CoolingTablesDevice& tab)
-{
-    if (T < 1.0e4) T = 1.0e4;
-    double logT = log10(T);
-
-    if (logT > 8.0) {
-        // log10(2.3e-19) = -18.638
-        return pow(10.0, -18.638 - 0.54 * logT);
-    }
-    double logLam = interp_uniform(logT, tab.logLambda,
-        tab.logT_min, tab.dlogT, tab.n);
-    return pow(10.0, logLam);
-}
-
-// ------------------------------------------------------------------
-// Y(T)  Ч temporal evolution function
-// ------------------------------------------------------------------
 __device__ __forceinline__
 double Y_of_T_dev(double T, const CoolingTablesDevice& tab)
 {
@@ -52,23 +11,39 @@ double Y_of_T_dev(double T, const CoolingTablesDevice& tab)
     double logT_max = tab.logT_min + (tab.n - 1) * tab.dlogT;
     if (logT < tab.logT_min) logT = tab.logT_min;
     if (logT > logT_max)     logT = logT_max;
-    return interp_uniform(logT, tab.Y_of_T,
-        tab.logT_min, tab.dlogT, tab.n);
+    double t = (logT - tab.logT_min) / tab.dlogT;
+    int i = (int)t;
+    if (i < 0) i = 0;
+    if (i > tab.n - 2) i = tab.n - 2;
+    double w = t - i;
+    double v0 = __ldg(&tab.Y_of_T[i]);
+    double v1 = __ldg(&tab.Y_of_T[i + 1]);
+    return v0 + w * (v1 - v0);
 }
 
-// ------------------------------------------------------------------
-// Y^{-1}(Y) -> T.  ¬озвращает T_floor, если Y > Y_max
-// (газ остыл бы ниже 10^4 K).
-// ------------------------------------------------------------------
 __device__ __forceinline__
-double T_of_Y_dev(double Y, const CoolingTablesDevice& tab,
+double T_of_Y_dev(double Y_star, const CoolingTablesDevice& tab,
     double T_floor = 1.0e4)
 {
-    double Y_max = tab.Y_min + (tab.n_y - 1) * tab.dY;
-    if (Y >= Y_max) return T_floor;
-    if (Y <= tab.Y_min) Y = tab.Y_min;
-    return interp_uniform(Y, tab.T_of_Y,
-        tab.Y_min, tab.dY, tab.n_y);
+    // Y_of_T строго убывает по индексу i (растЄт T -> убывает Y)
+    if (Y_star >= __ldg(&tab.Y_of_T[0]))
+        return pow(10.0, tab.logT_min);
+    if (Y_star <= __ldg(&tab.Y_of_T[tab.n - 1]))
+        return pow(10.0, tab.logT_min + (tab.n - 1) * tab.dlogT);
+
+    int lo = 0, hi = tab.n - 1;
+#pragma unroll 1
+    while (hi - lo > 1) {
+        int mid = (lo + hi) >> 1;
+        if (__ldg(&tab.Y_of_T[mid]) > Y_star) lo = mid;
+        else                                   hi = mid;
+    }
+    double Y0 = __ldg(&tab.Y_of_T[lo]);
+    double Y1 = __ldg(&tab.Y_of_T[hi]);
+    double w = (Y0 - Y_star) / (Y0 - Y1);
+    double logT = tab.logT_min + (lo + w) * tab.dlogT;
+    double T = pow(10.0, logT);
+    return (T < T_floor) ? T_floor : T;
 }
 
 // ------------------------------------------------------------------

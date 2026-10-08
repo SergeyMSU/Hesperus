@@ -141,7 +141,7 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.0// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.317705// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 #define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
@@ -1724,7 +1724,7 @@ __global__ void update_cells(
     const double* h_Pbz, const double* h_Bn,
     const double* v_Prho, const double* v_Pp, const double* v_Pvx, const double* v_Pvy, const double* v_Pvz,
     const double* v_Pbz, const double* v_Bn,
-    const double* dT)
+    const double* dT, CoolingTablesDevice tab)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1907,6 +1907,7 @@ __global__ void update_cells(
         {
             printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
             rho_2 = 1.0E-7;
+            p_2 = rho_2 * const_p * 0.2;
             Vx[idx] = 0.0;
             Vy[idx] = 0.0;
             Vz[idx] = 0.0;
@@ -2074,6 +2075,10 @@ __global__ void update_cells(
         By[idx] = By_2 = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
     }
 
+
+    Bx_2 += Bx_dipole(r, phi);
+    By_2 += By_dipole(r, phi);
+
     // p
     if (bb == false)
     {
@@ -2089,29 +2094,41 @@ __global__ void update_cells(
             - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
 
 
-        //double Temp = p_2 / rho_2 / const_p;
-
-        //// Если температура меньше эффективной температуры поверхности звезды
-        //if (Temp < 1.0)
-        //{
-        //    Temp = 1.0;
-        //    p_2 = const_p * rho_2;
-        //}
-
         if (p_2 < 1E-11)
         {
             p_2 = 1E-11;
         }
 
 
+        double Temp = p_2 / rho_2 / const_p;
+
+        // Если температура меньше эффективной температуры поверхности звезды
+        if (Temp < 0.2)
+        {
+            Temp = 0.2;
+            p_2 = const_p * rho_2 * Temp;
+        }
+
+        
         p[idx] = p_2;
     }
 
-    if (bb == false && r < 1.005 && sqrt(kvv(Vx_2, Vy_2, Vz_2)) > sqrt(ggg * const_p))
+    // cooling 
+    if (r > 1.05 && true)
     {
-        Vx[idx] = Vx[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
-        Vy[idx] = Vy[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
-        Vz[idx] = Vz[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+        double Temp = p_2 / rho_2 / const_p * 50000.0; // Считаем температуру в Кельвинах
+        double Temp2 = apply_cooling(Temp, dTime * 5508.33, rho_2 * 4.434495E-11, ggg, 0.6, 1.17, 1.4, tab)/ 50000.0;
+        // Проверка на floour температуру уже сидит внутри apply_cooling
+        
+        p_2 = const_p * rho_2 * Temp2;
+        p[idx] = p_2;
+    }
+
+    if (bb == false && r < 1.005 && sqrt(kvv(Vx_2, Vy_2, Vz_2) / (ggg * p_2 / rho_2)) > 1.0 )
+    {
+        Vx[idx] = Vx[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
+        Vy[idx] = Vy[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
+        Vz[idx] = Vz[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
     }
 
     if (i == print_i && j == print_j)
@@ -2216,8 +2233,8 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
 
             double Max = 0.0, Max_R = 0.0, Mach_Alph = 0.0, Mach_Alph_phi = 0.0;
 
-            Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * const_p));
-            Max_R = sqrt(kv(Vr) / (ggg * const_p));
+            Max = sqrt((kv(h_cell.Vx[k]) + kv(h_cell.Vy[k]) + kv(h_cell.Vz[k])) / (ggg * h_cell.p[k] / h_cell.rho[k]));
+            Max_R = sqrt(kv(Vr) / (ggg * h_cell.p[k] / h_cell.rho[k]));
 
             if (sqrt(kv(bx) + kv(by) + kv(h_cell.Bz[k])) > 0.00001)
             {
@@ -2265,10 +2282,10 @@ int main(void)
     // "save_paper-2_1(350x256).bin"
     string name1 = "save_D000.bin";   // Откуда скачиваем сетку
     string name2 = "save_D000-test_compare.bin";   // Куда сохраняем сетку
-    bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 10000 * 1; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    bool save_setka = false;                      // Надо ли сохранять сетку?
+    int all_step = 60000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
-    double time_razmer = 1.53056;
+    double time_razmer = 1.53009;
     double Mass_rashod_razmer = 286.211;
 
     double host_dT = 1.0E30;
@@ -2304,11 +2321,12 @@ int main(void)
     CellVars  h_cell_phi_average;
 
     // 1) Загружаем таблицы COOLING на host
-    CoolingTablesHost host;
-    load_cooling_tables(host);   // директория с *.txt
+    CoolingTablesHost tab_host;
+    load_cooling_tables(tab_host);   // директория с *.txt
 
     // 2) Копируем COOLING на device
-    CoolingTablesDevice dev = to_device(host);
+    CoolingTablesDevice tab_dev = to_device(tab_host);
+
 
     // Выделение памяти для всех массивов
     if (true)
@@ -2741,7 +2759,7 @@ int main(void)
             d_hFace.Prho, d_hFace.Pp, d_hFace.Pvx, d_hFace.Pvy, d_hFace.Pvz,
             d_hFace.Pbz, d_hFace.Bn,
             d_vFace.Prho, d_vFace.Pp, d_vFace.Pvx, d_vFace.Pvy, d_vFace.Pvz,
-            d_vFace.Pbz, d_vFace.Bn, dT);
+            d_vFace.Pbz, d_vFace.Bn, dT, tab_dev);
         cudaStatus = cudaGetLastError();
         if (cudaStatus != cudaSuccess) {
             fprintf(stderr, "1  addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
@@ -2848,7 +2866,8 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 125.0) break;
+        if (host_all_T * time_razmer > 50.0) break;
+        //if (host_all_T * time_razmer > 125.0) break;
     }
 
     out_rashod.close();
@@ -3371,8 +3390,8 @@ int main(void)
     }
 
 
-    free_device_tables(dev);
-    free_host_tables(host);
+    free_device_tables(tab_dev);
+    free_host_tables(tab_host);
 
 
     return 0;
