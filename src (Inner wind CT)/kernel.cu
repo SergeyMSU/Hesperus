@@ -23,7 +23,7 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
-#define method_rieman (1)   // = 1
+#define method_rieman (2)   // = 1
 
 // —ледующие определени€ дл€ €дра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -155,7 +155,7 @@
 #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 // TODO-1 в случае фонового магнитного пол€ они должны быть равны нулю
-#define Bx_dipole_0(r, phi) 0.0 //( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define Bx_dipole_0(r, phi) 0.0 // ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
 #define By_dipole_0(r, phi) 0.0 // ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
@@ -777,7 +777,7 @@ __global__ void compute_fluxes(
 
 
 
-                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l][j_l + 1] < 1.0E-5))
+                if (r < 1.05 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l][j_l + 1] < 1.0E-5))
                 {
                     method = 0;
 
@@ -980,7 +980,7 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (sh_rho[i_l][j_l - 1] < 1.0E-5 || sh_rho[i_l][j_l] < 1.0E-5))
+                if (r < 1.05 && (sh_rho[i_l][j_l - 1] < 1.0E-5 || sh_rho[i_l][j_l] < 1.0E-5))
                 {
                     method = 0;
                     rho_L = sh_rho[i_l][j_l - 1];
@@ -1076,7 +1076,7 @@ __global__ void compute_fluxes(
                     double Bphi2 = -sh_Bx[i_l + 1][j_l] * sin(phi_g) + sh_By[i_l + 1][j_l] * cos(phi_g);
                     double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r2 - r) * (r3 - r);
 
-                    Bphi = Bphi1;  // ћожно попробовать снести первым пор€дком
+                    //Bphi = Bphi1;  // ћожно попробовать снести первым пор€дком
 
 
                     //Vphi = -sh_Vx[i_l][j_l] * sin(phi_g) + sh_Vy[i_l][j_l] * cos(phi_g);  // —нос м€гкий
@@ -1085,7 +1085,7 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
-                    // Br = Br_dipole;   // ¬ случае если нет отдельного добавлени€ дипольного пол€ (разложени€ пол€ на фоновое и обычное)
+                    //Br = Br_dipole;   // ¬ случае если нет отдельного добавлени€ дипольного пол€ (разложени€ пол€ на фоновое и обычное)
                     // TODO-1 если надо убрать фоновое магнитное поле
 
 
@@ -1280,7 +1280,7 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l + 1][j_l] < 1.0E-5))
+                if (r < 1.05 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l + 1][j_l] < 1.0E-5))
                 {
                     method = 0;
                     rho_L = sh_rho[i_l][j_l];
@@ -1393,7 +1393,7 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (rho_L < 1.0E-5 || rho_R < 1.0E-5))
+                if (r < 1.05 && (rho_L < 1.0E-5 || rho_R < 1.0E-5))
                 {
                     method = 0;
                 }
@@ -1768,11 +1768,11 @@ __global__ void update_Bn_from_Ez(
     // попробуем обновить Bn на поверхности звезды
     if(i == 0)
     {
-        // double Bx = Bx_dipole_0(1.0, PHI_CENTER(j));
-        // double By = By_dipole_0(1.0, PHI_CENTER(j));
-        // v_Bn[idx_vface(i, j)] = Bx * cos(PHI_CENTER(j)) + By * sin(PHI_CENTER(j));  // TODO-1 если надо убрать фоновое магнитное поле
+         double Bx = Bx_dipole_0(1.0, PHI_CENTER(j));
+         double By = By_dipole_0(1.0, PHI_CENTER(j));
+         v_Bn[idx_vface(i, j)] = Bx * cos(PHI_CENTER(j)) + By * sin(PHI_CENTER(j));  // TODO-1 если надо убрать фоновое магнитное поле
 
-        v_Bn[idx_vface(i, j)] = 0.0;  // TODO-1 если надо убрать фоновое магнитное поле
+        //v_Bn[idx_vface(i, j)] = 0.0;  // TODO-1 если надо убрать фоновое магнитное поле
 
 
 
@@ -2319,7 +2319,7 @@ int main(void)
     string name1 = "save_GD.bin";   // ќткуда скачиваем сетку
     string name2 = "save_Test3.bin";   //  уда сохран€ем сетку
     bool save_setka = true;                      // Ќадо ли сохран€ть сетку?
-    int all_step = 17000 * 3; // 17000 * 3; // 24000 * 60 * 9; // „исло шагов
+    int all_step = 17000 * 10; // 17000 * 3; // 24000 * 60 * 9; // „исло шагов
     double period_print = 30.0; // — каким периодом выводим в часах
     double time_razmer = 1.5300;
     double Mass_rashod_razmer = 283.113;
@@ -2591,7 +2591,7 @@ int main(void)
             //h_cell.Vz[k] = 0.0;
 
             // TODO-1
-            h_cell.Bx[k] = 0.0; // Bx_dipole_0(r, phi);
+            h_cell.Bx[k] = 0.0; //  Bx_dipole_0(r, phi);
             h_cell.By[k] = 0.0; //  By_dipole_0(r, phi);
             h_cell.Bz[k] = 0.0;
 

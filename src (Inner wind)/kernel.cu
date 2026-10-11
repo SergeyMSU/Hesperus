@@ -124,9 +124,13 @@
 
 #define V_phi_init (0.00208333)  // (0.266667)   //   Скорость вращения звезды
 
-
+// TODO-1 если надо убрать фоновое магнитное поле
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
 #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+
+// TODO-1 в случае фонового магнитного поля они должны быть равны нулю
+#define Bx_dipole_0(r, phi) 0.0 // ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define By_dipole_0(r, phi) 0.0 // ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
 #define DERIVATIVE(f_left, f_center, f_right, hL, hR) \
@@ -1849,7 +1853,7 @@ __global__ void funk_time(double* T, double* T_do, double* TT, int* i, double* c
     *T = 10000000;
     *ch_posle = 0.0;
     *i = *i + 1;
-    if (*i % 1000 == 0)
+    if (*i % 5000 == 0)
     {
         printf("i = %d,  TT all = %lf, hours = %lf; dT hours = %E, %E \n", *i, *TT, *TT * 1.09556, *T_do * 1.09556, *ch);
     }
@@ -2053,6 +2057,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         //double Br = kv(r) * (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
         //double Br = Br1 + Bo_init * cos(pi / 2.0 - phi) * (-1.0 + kv(1.0/r));
         double Br = 0.0;
+        
 
 
         double Bphi1 = -b_1.x * sin(phi) + b_1.y * cos(phi);
@@ -2068,6 +2073,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double Br_dipole = Bo_init * cos(pi / 2.0 - phi);
         double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
 
+        // TODO-1 
+        //Br = Br_dipole;
 
         /*if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
         {
@@ -2135,6 +2142,8 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double Br = 0.0; // kv(r4)* (Br1 + Bo_init * cos(pi / 2.0 - phi) * pow(1.0 / r4, 2.0)) - Bo_init * cos(pi / 2.0 - phi);
 
 
+
+
         double Bphi1 = -b_4.x * sin(phi) + b_4.y * cos(phi);
         double Bphi2 = -b_1.x * sin(phi) + b_1.y * cos(phi);
         double Bphi = Bphi1 + (Bphi2 - Bphi1) / (r - r4) * (r41 - r4);
@@ -2142,12 +2151,14 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
         //double Bphi = -Bo_init/2.0 * sin(pi / 2.0 - phi);
 
-        b_41.x = (Br * cos(phi) - Bphi * sin(phi));
-        b_41.y = (Br * sin(phi) + Bphi * cos(phi));
-
         double Br_dipole = Bo_init * cos(pi / 2.0 - phi);
         double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi);
 
+        // TODO-1 
+        //Br = Br_dipole;
+
+        b_41.x = (Br * cos(phi) - Bphi * sin(phi));
+        b_41.y = (Br * sin(phi) + Bphi * cos(phi));
 
         /*if (fabs(phi) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
         {
@@ -3108,7 +3119,7 @@ int main(void)
 
     string name1 = "save_GD.bin";   // Откуда скачиваем
     string name2 = "save_D001-m2--.bin";   // Куда сохраняем
-    int all_step = 24000 * 25; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294
+    int all_step = 24000 * 15; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294  25
     double time_razmer = 1.53056;
 
     double3* host_s;
