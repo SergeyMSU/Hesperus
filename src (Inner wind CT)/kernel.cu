@@ -10,20 +10,20 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 350 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 310 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 100 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define Rb (6.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.02) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define Rb (15.0)  // (6.0)             // Внешний радиус сетки
+#define qb (1.021) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.02) // (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.0624) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define BX 16   // Размеры блока потоков 
 #define BY 16   // Размеры блока потоков 
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
-#define method_rieman (1)   // = 20
+#define method_rieman (1)   // = 1
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -129,8 +129,8 @@
 #define rho_in 1.0 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
 #define F_grav (-0.0875475)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0449595)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.0124885) // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_continuum (0.0436174)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line  (0.0126459) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
@@ -138,14 +138,25 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.0// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.332116// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
+#define V_phi_init (0.00208333)  // (0.266667)   //   Скорость вращения звезды
 
 
+#define snos_rho_by_rr (true)   // = 1
+#define snos_v_by_polar (true)   // = 1
+#define snos_b_by_polar (true)   // = 1
+#define snos_br_in_cell_by_r (true)   // = 1
+
+
+// TODO-1 если надо убрать фоновое магнитное поле
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
 #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+
+// TODO-1 в случае фонового магнитного поля они должны быть равны нулю
+#define Bx_dipole_0(r, phi) 0.0 //( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define By_dipole_0(r, phi) 0.0 // ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
@@ -268,6 +279,7 @@ __host__ __device__ double linear(double x1, double t1, double x2, double t2, do
 {
     double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
     return  (d * (y - x2) + t2);
+    //return t2;   // Это если нужно сделать первый порядок точности по пространству
 }
 
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
@@ -526,10 +538,10 @@ __global__ void compute_fluxes(
         sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
         sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];*/
 
-        sh_Vz[i_l][j_l + 1] = 0.0;
-        sh_Vx[i_l][j_l + 1] = 0.0;
-        sh_Bx[i_l][j_l + 1] = 0.0;
-        sh_Bz[i_l][j_l + 1] = 0.0;
+        sh_Vz[i_l][j_l + 1] = -sh_Vz[i_l][j_l];
+        sh_Vx[i_l][j_l + 1] = -sh_Vx[i_l][j_l];
+        sh_Bx[i_l][j_l + 1] = -sh_Bx[i_l][j_l];
+        sh_Bz[i_l][j_l + 1] = -sh_Bz[i_l][j_l];
         sh_By[i_l][j_l + 1] = sh_By[i_l][j_l];
         sh_Vy[i_l][j_l + 1] = sh_Vy[i_l][j_l];
         sh_rho[i_l][j_l + 1] = sh_rho[i_l][j_l];
@@ -611,7 +623,7 @@ __global__ void compute_fluxes(
                     phi4 = PHI_CENTER(j + 2);
                 }
 
-
+                
                 rho_L = linear(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
                 rho_R = linear(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
@@ -652,11 +664,22 @@ __global__ void compute_fluxes(
                         Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
-                    Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
-                    Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
 
-                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
-                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    if (snos_v_by_polar == true)
+                    {
+                        Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+                        Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+                        Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+                        Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Vx_L = linear(phi3, sh_Vx[i_l][j_l - 1], phi1, sh_Vx[i_l][j_l], phi2, sh_Vx[i_l][j_l + 1], phi_g);
+                        Vx_R = linear(phi4, sh_Vx[i_l][j_l + 2], phi2, sh_Vx[i_l][j_l + 1], phi1, sh_Vx[i_l][j_l], phi_g);
+                        Vy_L = linear(phi3, sh_Vy[i_l][j_l - 1], phi1, sh_Vy[i_l][j_l], phi2, sh_Vy[i_l][j_l + 1], phi_g);
+                        Vy_R = linear(phi4, sh_Vy[i_l][j_l + 2], phi2, sh_Vy[i_l][j_l + 1], phi1, sh_Vy[i_l][j_l], phi_g);
+                    }
                 }
 
                 // Магнитные поля Bx, By
@@ -688,23 +711,34 @@ __global__ void compute_fluxes(
                         Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
-                    Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
-                    By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
-                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
-                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    if (snos_b_by_polar == true)
+                    {
+                        Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+                        By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+                        Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+                        By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Bx_L = linear(phi3, sh_Bx[i_l][j_l - 1], phi1, sh_Bx[i_l][j_l], phi2, sh_Bx[i_l][j_l + 1], phi_g);
+                        Bx_R = linear(phi4, sh_Bx[i_l][j_l + 2], phi2, sh_Bx[i_l][j_l + 1], phi1, sh_Bx[i_l][j_l], phi_g);
+                        By_L = linear(phi3, sh_By[i_l][j_l - 1], phi1, sh_By[i_l][j_l], phi2, sh_By[i_l][j_l + 1], phi_g);
+                        By_R = linear(phi4, sh_By[i_l][j_l + 2], phi2, sh_By[i_l][j_l + 1], phi1, sh_By[i_l][j_l], phi_g);
+                    }
                 }
            
-                if (j == M - 1)
-                {
-                    rho_L = rho_R = sh_rho[i_l][j_l + 1];
-                    Vx_L = Vx_R = sh_Vx[i_l][j_l + 1];
-                    Bx_L = Bx_R = sh_Bx[i_l][j_l + 1];
-                    Bz_L = Bz_R = sh_Bz[i_l][j_l + 1];
-                    By_L = By_R = sh_By[i_l][j_l + 1];
-                    Vy_L = Vy_R = sh_Vy[i_l][j_l + 1];
-                    Vz_L = Vz_R = sh_Vz[i_l][j_l + 1];
-                }
+                //if (j == M - 1)
+                //{
+                //    rho_L = rho_R = sh_rho[i_l][j_l + 1];
+                //    Vx_L = Vx_R = sh_Vx[i_l][j_l + 1];
+                //    Bx_L = Bx_R = sh_Bx[i_l][j_l + 1];
+                //    Bz_L = Bz_R = sh_Bz[i_l][j_l + 1];
+                //    By_L = By_R = sh_By[i_l][j_l + 1];
+                //    Vy_L = Vy_R = sh_Vy[i_l][j_l + 1];
+                //    Vz_L = Vz_R = sh_Vz[i_l][j_l + 1];
+                //}
 
              }
 
@@ -850,11 +884,22 @@ __global__ void compute_fluxes(
                         Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
-                    Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
-                    Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+                    
+                    if (snos_v_by_polar == true)
+                    {
+                        Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+                        Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
 
-                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
-                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                        Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+                        Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Vx_L = linear(phi3, sh_Vx[i_l][j_l - 2], phi1, sh_Vx[i_l][j_l - 1], phi2, sh_Vx[i_l][j_l], phi_g);
+                        Vx_R = linear(phi4, sh_Vx[i_l][j_l + 1], phi2, sh_Vx[i_l][j_l], phi1, sh_Vx[i_l][j_l - 1], phi_g);
+                        Vy_L = linear(phi3, sh_Vy[i_l][j_l - 2], phi1, sh_Vy[i_l][j_l - 1], phi2, sh_Vy[i_l][j_l], phi_g);
+                        Vy_R = linear(phi4, sh_Vy[i_l][j_l + 1], phi2, sh_Vy[i_l][j_l], phi1, sh_Vy[i_l][j_l - 1], phi_g);
+                    }
                 }
 
                 // Магнитные поля Bx, By
@@ -886,11 +931,21 @@ __global__ void compute_fluxes(
                         Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
-                    Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
-                    By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+                    if (snos_b_by_polar == true)
+                    {
+                        Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+                        By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
-                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
-                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                        Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+                        By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Bx_L = linear(phi3, sh_Bx[i_l][j_l - 2], phi1, sh_Bx[i_l][j_l - 1], phi2, sh_Bx[i_l][j_l], phi_g);
+                        Bx_R = linear(phi4, sh_Bx[i_l][j_l + 1], phi2, sh_Bx[i_l][j_l], phi1, sh_Bx[i_l][j_l - 1], phi_g);
+                        By_L = linear(phi3, sh_By[i_l][j_l - 2], phi1, sh_By[i_l][j_l - 1], phi2, sh_By[i_l][j_l], phi_g);
+                        By_R = linear(phi4, sh_By[i_l][j_l + 1], phi2, sh_By[i_l][j_l], phi1, sh_By[i_l][j_l - 1], phi_g);
+                    }
                 }
             }
 
@@ -1030,6 +1085,9 @@ __global__ void compute_fluxes(
                     double Br_dipole = Bo_init * cos(pi / 2.0 - phi_g);
                     double Bphi_dipole = -Bo_init / 2.0 * sin(pi / 2.0 - phi_g);
 
+                    // Br = Br_dipole;   // В случае если нет отдельного добавления дипольного поля (разложения поля на фоновое и обычное)
+                    // TODO-1 если надо убрать фоновое магнитное поле
+
 
                     //if (fabs(phi_g) > phi_init && fabs(Br + Br_dipole) > 0.0000001)
                     //{
@@ -1041,7 +1099,7 @@ __global__ void compute_fluxes(
                     //    Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
                     //}
 
-
+                    //Vphi = Vr * (Bphi + Bphi_dipole) / (Br + Br_dipole);
 
                     sh_rho[i_l - 1][j_l] = rho_in;
                     sh_Vx[i_l - 1][j_l] = (Vr * cos(phi_g) - Vphi * sin(phi_g));
@@ -1053,11 +1111,20 @@ __global__ void compute_fluxes(
                     sh_Bz[i_l - 1][j_l] = sh_Bz[i_l][j_l];
                 }
 
-
-                rho_L = linear(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
-                if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
-                if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
+                if (snos_rho_by_rr == true)
+                {
+                    rho_L = linear(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                    if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
+                    rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
+                    if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
+                }
+                else
+                {
+                    rho_L = linear(r3, sh_rho[i_l - 1][j_l], r, sh_rho[i_l][j_l], r2, sh_rho[i_l + 1][j_l], r_g);
+                    if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
+                    rho_R = linear(r4, sh_rho[i_l + 2][j_l], r2, sh_rho[i_l + 1][j_l], r, sh_rho[i_l][j_l], r_g);
+                    if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
+                }
 
                 Vz_L = linear(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
                 Vz_R = linear(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
@@ -1116,11 +1183,22 @@ __global__ void compute_fluxes(
                         Vphi_R = linear(r4, Vr4, r2, Vr2, r, Vr, r_g);
                     }
 
-                    Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
-                    Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
 
-                    Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
-                    Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    if (snos_v_by_polar == true)
+                    {
+                        Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
+                        Vy_L = Vr_L * sin(phi_g) + Vphi_L * cos(phi_g);
+
+                        Vx_R = Vr_R * cos(phi_g) - Vphi_R * sin(phi_g);
+                        Vy_R = Vr_R * sin(phi_g) + Vphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Vx_L = linear(r3, sh_Vx[i_l - 1][j_l], r, sh_Vx[i_l][j_l], r2, sh_Vx[i_l + 1][j_l], r_g);
+                        Vx_R = linear(r4, sh_Vx[i_l + 2][j_l], r2, sh_Vx[i_l + 1][j_l], r, sh_Vx[i_l][j_l], r_g);
+                        Vy_L = linear(r3, sh_Vy[i_l - 1][j_l], r, sh_Vy[i_l][j_l], r2, sh_Vy[i_l + 1][j_l], r_g);
+                        Vy_R = linear(r4, sh_Vy[i_l + 2][j_l], r2, sh_Vy[i_l + 1][j_l], r, sh_Vy[i_l][j_l], r_g);
+                    }
                 }
 
                 // Магнитные поля Bx, By
@@ -1152,11 +1230,22 @@ __global__ void compute_fluxes(
                         Bphi_R = linear(r4, Br4, r2, Br2, r, Br, r_g);
                     }
 
-                    Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
-                    By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
 
-                    Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
-                    By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    if (snos_b_by_polar == true)
+                    {
+                        Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
+                        By_L = Br_L * sin(phi_g) + Bphi_L * cos(phi_g);
+
+                        Bx_R = Br_R * cos(phi_g) - Bphi_R * sin(phi_g);
+                        By_R = Br_R * sin(phi_g) + Bphi_R * cos(phi_g);
+                    }
+                    else
+                    {
+                        Bx_L = linear(r3, sh_Bx[i_l - 1][j_l], r, sh_Bx[i_l][j_l], r2, sh_Bx[i_l + 1][j_l], r_g);
+                        Bx_R = linear(r4, sh_Bx[i_l + 2][j_l], r2, sh_Bx[i_l + 1][j_l], r, sh_Bx[i_l][j_l], r_g);
+                        By_L = linear(r3, sh_By[i_l - 1][j_l], r, sh_By[i_l][j_l], r2, sh_By[i_l + 1][j_l], r_g);
+                        By_R = linear(r4, sh_By[i_l + 2][j_l], r2, sh_By[i_l + 1][j_l], r, sh_By[i_l][j_l], r_g);
+                    }
                 }
             }
 
@@ -1166,16 +1255,16 @@ __global__ void compute_fluxes(
                 int idx_h = j * (N + 1) + (i + 1);
 
                 // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
-                //{
-                //    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
-                //    double Br = v_Bn[idx_h];
-                //    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+                {
+                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                    double Br = v_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
 
-                //    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
-                //    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
-                //}
+                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
 
                 // Добавляем фоновое дипольное поле
                 {
@@ -1679,7 +1768,14 @@ __global__ void update_Bn_from_Ez(
     // попробуем обновить Bn на поверхности звезды
     if(i == 0)
     {
-        v_Bn[idx_vface(i, j)] = 0.0;
+        // double Bx = Bx_dipole_0(1.0, PHI_CENTER(j));
+        // double By = By_dipole_0(1.0, PHI_CENTER(j));
+        // v_Bn[idx_vface(i, j)] = Bx * cos(PHI_CENTER(j)) + By * sin(PHI_CENTER(j));  // TODO-1 если надо убрать фоновое магнитное поле
+
+        v_Bn[idx_vface(i, j)] = 0.0;  // TODO-1 если надо убрать фоновое магнитное поле
+
+
+
         // v_Bn[idx_vface(i, j)] = v_Bn[idx_vface(i, j)] -
         //    *dT * (slot_h_from_left[idx_node(i, j + 1)] - slot_h_from_left[idx_node(i, j)]) / (DPHI(j) * R_EDGE(i));
     }
@@ -1992,7 +2088,15 @@ __global__ void update_cells(
             double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));*/
 
             //Br_center = (Br_left * x1 + Br_right * x2) / (2.0 * x);
-            Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+
+            if (snos_br_in_cell_by_r == true)
+            {
+                Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+            }
+            else
+            {
+                Br_center = (Br_left + Br_right) / (2.0);
+            }
 
 
             //double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
@@ -2179,9 +2283,9 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
                     sqrt(kv(h_cell.Bz[k]));
             }
 
-            fout5 << x << " " << y << " " << h_cell.rho[k] * 4.3E-11 << " " << log10(h_cell.rho[k] * 4.3E-11) <<//
-                " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
-                " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
+            fout5 << x << " " << y << " " << h_cell.rho[k] * 4.25603E-11 << " " << log10(h_cell.rho[k] * 4.25603E-11) <<//
+                " " << h_cell.Vx[k] * 2400.0 << " " << h_cell.Vy[k] * 2400.0 << " " << Vr * 2400.0 << " " << Vthe * 2400.0 << " " << h_cell.Vz[k] * 2400.0 <<
+                " " << bx * 1565.72 << " " << by * 1565.72 << " " << Br * 1565.72 << " " << Bthe * 1565.72 << " " << h_cell.Bz[k] * 1565.72 << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) * 1565.72 << " " << Max <<
                 " " << Max_R << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
 
@@ -2211,13 +2315,14 @@ int main(void)
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
-    string name1 = "save_D000.bin";   // Откуда скачиваем сетку
-    string name2 = "save_D000-test_compare.bin";   // Куда сохраняем сетку
+    //string name1 = "save_Test1.bin";   // Откуда скачиваем сетку
+    string name1 = "save_GD.bin";   // Откуда скачиваем сетку
+    string name2 = "save_Test3.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 5; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 3; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
-    double time_razmer = 1.53056;
-    double Mass_rashod_razmer = 286.211;
+    double time_razmer = 1.5300;
+    double Mass_rashod_razmer = 283.113;
 
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
@@ -2421,36 +2526,35 @@ int main(void)
             // Верхняя грань
             rg = r;
             phig = PHI_RIGHT(j);
-            Bx = Bx_dipole(rg, phig);
-            By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
-            //h_hFace.Bn[idx_hface(i, j + 1)] = -(- Bx * sin(phig) + By * cos(phig));
+            Bx = Bx_dipole_0(rg, phig);
+            By = By_dipole_0(rg, phig);
+            //h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j + 1)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Нижняя грань
             rg = r;
             phig = PHI_LEFT(j);
-            Bx = Bx_dipole(rg, phig);
-            By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j)] = 0.0;
-            //h_hFace.Bn[idx_hface(i, j)] = -(- Bx * sin(phig) + By * cos(phig));
+            Bx = Bx_dipole_0(rg, phig);
+            By = By_dipole_0(rg, phig);
+            //h_hFace.Bn[idx_hface(i, j)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Правая грань
             rg = R_EDGE(i + 1);
             phig = phi;
-            Bx = Bx_dipole(rg, phig);
-            By = By_dipole(rg, phig);
-            //h_vFace.Bn[idx_vface(i + 1, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
-            h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
-            //h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
+            Bx = Bx_dipole_0(rg, phig);
+            By = By_dipole_0(rg, phig);
+            //h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
 
             // Левая грань
             rg = R_EDGE(i);
             phig = phi;
-            Bx = Bx_dipole(rg, phig);
-            By = By_dipole(rg, phig);
-            //h_vFace.Bn[idx_vface(i, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
-            h_vFace.Bn[idx_vface(i, j)] = 0.0;
-            //h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
+            Bx = Bx_dipole_0(rg, phig);
+            By = By_dipole_0(rg, phig);
+            //h_vFace.Bn[idx_vface(i, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
+
         }
     }
 
@@ -2476,19 +2580,19 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            h_cell.rho[k] = rho;
-            h_cell.Vx[k] = vr * x / dist;
-            h_cell.Vy[k] = vr * y / dist;
-            h_cell.Vz[k] = 0.0;
+            //h_cell.rho[k] = rho;
+            //h_cell.Vx[k] = vr * x / dist;
+            //h_cell.Vy[k] = vr * y / dist;
+            //h_cell.Vz[k] = 0.0;
 
             //h_cell.rho[k] = 1.0;
             //h_cell.Vx[k] = 1.0 * x / dist;
             //h_cell.Vy[k] = 1.0 * y / dist;
             //h_cell.Vz[k] = 0.0;
 
-
-            h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
-            h_cell.By[k] = 0.0;// By_dipole(r, phi);
+            // TODO-1
+            h_cell.Bx[k] = 0.0; // Bx_dipole_0(r, phi);
+            h_cell.By[k] = 0.0; //  By_dipole_0(r, phi);
             h_cell.Bz[k] = 0.0;
 
             /*double Br = Br_test(r, phi);
@@ -2766,7 +2870,7 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 125.0) break;
+        if (host_all_T * time_razmer > 200.0) break;
     }
 
     out_rashod.close();

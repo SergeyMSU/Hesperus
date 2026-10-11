@@ -10,13 +10,13 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 310 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 100 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define Rb (6.0)             // Внешний радиус сетки
-#define qb (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define Rb (15.0)             // Внешний радиус сетки
+#define qb (1.021)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.0624)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define print_i (34800)           // предполагаем, что M чётное
 #define print_j (254)           // предполагаем, что M чётное
@@ -105,23 +105,24 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.000119365  // (0.000447362)     // p = const_p * rho
+#define const_p 0.000119365 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 1.0 // (0.220637)     // p = const_p * rho
+#define rho_in 1.0 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.0892042)           // Коэффициент перед силой гравитации
-#define F_continuum (0.045356)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line (0.0127178)     // Коэффициент внутри line-driven силы
+#define F_grav (-0.0875475)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0436174)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line  (0.0126459) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
-#define alpha_line (0.6) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
+#define alpha_line (0.6) // (0.44) //(0.752342) //(0.5)      // Коэффициент внутри line-driven силы
 
-// 0.0590932  0.187446
-#define Bo_init 0.0590932 // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
-#define phi_init (pi/2.0) // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
+// 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
+// 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
+#define Bo_init 0.332116// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init 0.0  // (0.266667)   //   Скорость вращения звезды
+#define V_phi_init (0.00208333)  // (0.266667)   //   Скорость вращения звезды
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -2712,7 +2713,7 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         double fr = 0.0;
         fr = (F_grav + F_continuum) * s_1.x / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
 
-        if (true)
+        if (false)
         {
             // Line-driven force
             //double Vr2 = (u_2.x * (x + dx) + u_2.y * y) / sqrt(kvv(0.0, x + dx, y));
@@ -2726,12 +2727,6 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
             double dVrdr = (Vr2 - Vr1) / dr2;
 
             //dVrdr = min(dVrdr, 100.0);
-
-            //if (isnan(dVrdr) == true || dVrdr == 0.0)
-            //{
-            //    printf("Problems fr = %lf, %lf, %lf, %lf \n", Vr2, Vr1, dr2, pow(dVrdr, alpha_line));
-            //}
-
             //dVrdr = max(dVrdr, 1.0);
 
             double sigma = fabs(dVrdr * r / Vr1) - 1.0;  // Vr1
@@ -2762,38 +2757,41 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
             double fline = F_line * ff * s_1.x * pow(fabs(dVrdr) / s_1.x, alpha_line) / kv(r);
             fr += fline;
-
-            //if (isnan(fr) == true)
-            //{
-            //    printf("Problems fr = %lf, %lf, %lf, %lf, %lf \n", fr, ff, fabs(dVrdr), Vr2, Vr1);
-            //}
-
-
-            //double A_abbott = Vr1 - alpha_line * fline / fabs(dVrdr);
-            /*tmin = krit * dr2 / (alpha_line * fline / max(fabs(dVrdr), 0.0005));
-
-            if (*T > tmin)
-            {
-                atomicMinDouble(T, tmin);
-            }*/
-
-            //double vth = sqrt(const_p);
-            //double vth = sqrt(const_p * sqrt(1.0 / r));
-            //double tt = F_line * s_1.x * vth;
-            //double Mt = k_line * pow(fabs(dVrdr)/tt, alpha_line);
-            //fr += F_continuum * s_1.x * Mt / kv(r);
-
-            //if (fr > 100.0)
-            //{
-            //    printf("Problems fr = %lf", fr);
-            //}
-
         }
 
-        //if (fr < 0.0 && Vr1 <= 0.0)
-        //{
-        //    fr = 0.000001;
-        //}
+
+        if (true)
+        {
+            double dvdr = (Vr2 - Vr1) / dr2;
+            const double tiny = 1e-12;
+            if (dvdr < tiny) dvdr = tiny;   // только положительный, как у ud-Doula
+            double Rstar = 1.0;
+            double sigma = (1.0 - Vr1 / (r * dvdr)) * (Rstar * Rstar) / (r * r);
+            double oma = 1.0 + alpha_line;
+            double fdisk = 1.0;
+            if (sigma >= 1.0)
+            {
+                fdisk = 1.0 / oma;
+            }
+            else if (sigma < -1.0e10)
+            {
+                fdisk = pow(-sigma, alpha_line) / oma;
+            }
+            else if (fabs(sigma) > 1.0e-3)
+            {
+                fdisk = (1.0 - pow(1.0 - sigma, oma)) / (sigma * oma);
+            }
+            else
+            {
+                // Разложение около sigma = 0, как у ud-Doula
+                fdisk = 1.0 - 0.5 * alpha_line * sigma *
+                    (1.0 + 0.3333333 * (1.0 - alpha_line) * sigma);
+            }
+
+            double fline = F_line * fdisk * pow(s_1.x, 1.0 - alpha_line) * pow(dvdr, alpha_line) / kv(r);
+            fr += fline;
+        }
+
 
         Fx = fr * x / r;
         Fy = fr * y / r;
@@ -2810,10 +2808,29 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
 
     //*T_do = 1.0E-4;
 
+    bool bb = false;
+
     if (true)
     {
         s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
         //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
+
+        if (s2[index].x < 1.0E-5 && r < 1.5)
+        {
+            s2[index].x = 1.0E-5;
+
+            u2[index].x = 0.0;
+            u2[index].y = 0.0;
+            u2[index].z = 0.0;
+
+            b2[index].x = b[index].x;
+            b2[index].y = b[index].y;
+            b2[index].z = b[index].z;
+
+            bb = true;
+        }
+
+
         if (s2[index].x <= 0)
         {
             printf("Problemsssss! x = %lf, y = %lf, ro = %lf, T = %lf, ro = %lf \n", x, y, s2[index].x, *T_do, s_1.x);
@@ -2841,12 +2858,14 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         //u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (b_1.x / cpi4) * Pdiv) / dV  - *T_do * (s_1.x * u_1.y * u_1.y + (kv(b_1.x) + kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
 
 
+        if (bb == false)
+        {
+            u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (bx / cpi4) * Pdiv) / dV + *T_do * (s_1.x * (kv(u_1.z) - kv(u_1.x)) + (kv(bx) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
+            u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (by / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - bx * by / cpi4) / x + *T_do * Fy) / s2[index].x;
+            u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - bx * b_1.z / cpi4) / x) / s2[index].x;
 
-        u2[index].x = (s_1.x * u_1.x - *T_do * (PU.x + (bx / cpi4) * Pdiv) / dV + *T_do * (s_1.x * (kv(u_1.z) - kv(u_1.x)) + (kv(bx) - kv(b_1.z)) / cpi4) / x + *T_do * Fx) / s2[index].x;
-        u2[index].y = (s_1.x * u_1.y - *T_do * (PU.y + (by / cpi4) * Pdiv) / dV - *T_do * (s_1.x * u_1.x * u_1.y - bx * by / cpi4) / x + *T_do * Fy) / s2[index].x;
-        u2[index].z = (s_1.x * u_1.z - *T_do * (PU.z + (b_1.z / cpi4) * Pdiv) / dV - 2.0 * *T_do * (s_1.x * u_1.x * u_1.z - bx * b_1.z / cpi4) / x) / s2[index].x;
-
-        s2[index].y = const_p * s2[index].x;
+            s2[index].y = const_p * s2[index].x;
+        }
 
     }
 
@@ -2854,32 +2873,25 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
     //b2[index].x = (b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV - *T_do*(u_1.y * b_1.x - b_1.y * u_1.x)/y);
     //b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV);
 
-    b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
-    b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * by - bx * u_1.y) / x);
-    b2[index].z = b_1.z - *T_do * (PB.z + u_1.z * Pdiv) / dV;
+    if (bb == false)
+    {
+        b2[index].x = b_1.x - *T_do * (PB.x + u_1.x * Pdiv) / dV;
+        b2[index].y = (b_1.y - *T_do * (PB.y + u_1.y * Pdiv) / dV - *T_do * (u_1.x * by - bx * u_1.y) / x);
+        b2[index].z = b_1.z - *T_do * (PB.z + u_1.z * Pdiv) / dV;
+    }
 
-    //s2[index].y = (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) - *T_do * (PS.y + (skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) / cpi4) * Pdiv)//
-    //    / dV - *T_do * ( ( (U8(s_1.x, s_1.y, u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z) + s_1.y + kvv(b_1.x, b_1.y, b_1.z) / cpi8)* u_1.y - b_1.y * skk(u_1.x, u_1.y, 0.0, b_1.x, b_1.y, b_1.z)/cpi4)/ y) //
-    //    - 0.5 * s2[index].x * kvv(u2[index].x, u2[index].y, 0.0) - kvv(b2[index].x, b2[index].y, b2[index].z) / cpi8) * (ggg - 1.0);
-
-
-    //s2[index].y = const_p * s2[index].x * sqrt(1.0 / r);
-    //s2[index].y = const_p * s2[index].x;
-    //s2[index].y = s2[index].x;
-
-    double tau = 0.18 * min(DPHI(m) * r, DR(n)) / ch_now;  // 0.18     18 - норм
-    //double tau = 0.18/ ch_now;
-
-    if (tau < 2.0 * *T_do)  tau = 2.0 * *T_do;
-    if (tau > 100.0 * *T_do) tau = 100.0 * *T_do;
-
-    //tau = 4.0 * *T_do;
 
     s2[index].z = 0.0; // (s_1.z - *T_do * PS.z / dV - *T_do * ch_now * ch_now * bx / x)* exp(-*T_do / tau);
 
-    if (n == print_i && m == print_j)
+    if (bb == false && r < 1.005 && sqrt(kvv(u2[index].x, u2[index].y, u2[index].z)) > sqrt(ggg * const_p))
     {
-        printf("Cell 0; 100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E\n ", s2[index].x, u2[index].x, u2[index].y, u2[index].z, Fx, Fy, (PS.x / dV + s_1.x * u_1.x / x), PS.x, x);
+        double Vx_2 = u2[index].x;
+        double Vy_2 = u2[index].y;
+        double Vz_2 = u2[index].z;
+
+        u2[index].x = u2[index].x / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+        u2[index].y = u2[index].y / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
+        u2[index].z = u2[index].z / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * const_p);
     }
 
 
@@ -3094,9 +3106,9 @@ int main(void)
     // в 1 - коллебания на оси простирались примерно до x = 1.37
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
 
-    string name1 = "save_D000.bin";   // Откуда скачиваем
-    string name2 = "save_D001-m2-.bin";   // Куда сохраняем
-    int all_step = 24000 * 60; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294
+    string name1 = "save_GD.bin";   // Откуда скачиваем
+    string name2 = "save_D001-m2--.bin";   // Куда сохраняем
+    int all_step = 24000 * 25; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294
     double time_razmer = 1.53056;
 
     double3* host_s;
@@ -3340,7 +3352,7 @@ int main(void)
     cout << "START" << endl;
 
 
-    int meth = 1; // 2;  // Laks метода нет! Нужно сделать
+    int meth = 0; // 1; // 2;  // Laks метода нет! Нужно сделать
 
     // NO TVD
     for (int i = 0; i < all_step; i = i + 2)  // Сколько шагов по времени делаем?
@@ -3648,7 +3660,7 @@ int main(void)
             double T_all;
             cudaMemcpy(&T_all, TT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
-            if (T_all * time_razmer > 125.0) break;
+            if (T_all * time_razmer > 150.0) break;
         }
 
 
@@ -3702,14 +3714,14 @@ int main(void)
 
     int nn = (int)((N + Nmin - 1) / Nmin);
     int mm = (int)((M + Nmin - 1) / Nmin);
-    fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\", \"psi\",  ZONE T = \"HP\", N = " << K //
+    fout5 << "TITLE = \"HP\"  VARIABLES = \"X\", \"Y\", \"Ro\", \"LgRo\", \"P\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Max\", \"Max_Alf\",\"T\", \"psi\",  ZONE T = \"HP\", N = " << K //
         << " , E = " << (N - 1) * (M - 1) << ", F = FEPOINT, ET = quadrilateral" << endl;
 
     for (int k = 0; k < K; k++)
     {
         bfout.write((char*)&host_s[k].x, sizeof(host_s[k].x));
         bfout.write((char*)&host_s[k].y, sizeof(host_s[k].y));
-        bfout.write((char*)&host_s[k].z, sizeof(host_s[k].y));
+        //bfout.write((char*)&host_s[k].z, sizeof(host_s[k].y));
         bfout.write((char*)&host_u[k].x, sizeof(host_u[k].x));
         bfout.write((char*)&host_u[k].y, sizeof(host_u[k].y));
         bfout.write((char*)&host_u[k].z, sizeof(host_u[k].z));
@@ -3761,9 +3773,9 @@ int main(void)
         double Br = (bx * x + by * y) / sqrt(x * x + y * y);
         double Bthe = (bx * y - by * x) / sqrt(x * x + y * y);
 
-        fout5 << x << " " << y << " " << host_s[k].x << " " << host_s[k].y <<//
-            " " << host_u[k].x << " " << host_u[k].y << " " << Vr << " " << Vthe << " " << host_u[k].z <<
-            " " << bx << " " << by << " " << Br << " " << Bthe << " " << host_b[k].z << " " << //
+        fout5 << x << " " << y << " " << host_s[k].x * 4.25603E-11 << " " << log10(host_s[k].x * 4.25603E-11) << " " << host_s[k].y <<//
+            " " << host_u[k].x * 2400.0 << " " << host_u[k].y * 2400.0 << " " << Vr * 2400.0 << " " << Vthe * 2400.0 << " " << host_u[k].z * 2400.0 <<
+            " " << bx * 1565.72 << " " << by * 1565.72 << " " << Br * 1565.72 << " " << Bthe * 1565.72 << " " << host_b[k].z * 1565.72 << " " << //
             Max << " " << Max_alf << " " << Temp << " " << host_s[k].z << endl;
     }
 
