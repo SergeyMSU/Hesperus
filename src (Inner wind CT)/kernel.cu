@@ -282,6 +282,60 @@ __host__ __device__ double linear(double x1, double t1, double x2, double t2, do
     //return t2;   // Это если нужно сделать первый порядок точности по пространству
 }
 
+// WENO-Z3 для геометрической сетки x_{i+1}/x_i = d = const.
+// Внутри переходит к xi = ln(x), где сетка равномерна.
+// Реконструкция в точке x_target между x1 и x2 (в xi-пространстве t=0.5).
+//
+// Аргументы:
+//   x0, y0 : левая точка
+//   x1, y1 : центральная точка (для которой строится реконструкция)
+//   x2, y2 : правая точка
+//   x_target : координата, куда сносим (должна быть между x1 и x2)
+
+__device__ __forceinline__ double weno_z3_interp_geom(
+    double x0, double y0,
+    double x1, double y1,
+    double x2, double y2,
+    double x_target)
+{
+    // --- 1. Переход в логарифмические координаты ---
+    double xi1 = log(x1);
+    double xi_t = log(x_target);
+    double h = 0.5 * ((log(x1) - log(x0)) + (log(x2) - log(x1)));
+    double t = (xi_t - xi1) / h;   // для грани между x1, x2: t = 0.5
+
+    // --- 2. Два линейных полинома-кандидата ---
+    double P0 = y1 + (y1 - y0) * t;          // экстраполяция влево
+    double P1 = y1 + (y2 - y1) * t;          // интерполяция
+
+    // --- 3. Локальные индикаторы гладкости ---
+    double beta0 = (y1 - y0) * (y1 - y0);
+    double beta1 = (y2 - y1) * (y2 - y1);
+
+    // --- 4. Глобальный индикатор гладкости (WENO-Z) ---
+    double tau3 = fabs(beta0 - beta1);
+
+    // --- 5. Линейные веса для точечных значений при t = 0.5 ---
+    const double gamma0 = 0.25;   // 1/4
+    const double gamma1 = 0.75;   // 3/4
+
+    // --- 6. Нелинейные веса WENO-Z ---
+    // Формула: alpha_k = gamma_k * (1 + (tau3 / (beta_k + eps))^p)
+    // p = 1 рекомендуется для WENO3-Z; p = 2 даёт больше диссипации.
+    const double eps = 1.0e-6;
+    const double p = 1.0;
+
+    double a0 = gamma0 * (1.0 + pow(tau3 / (beta0 + eps), p));
+    double a1 = gamma1 * (1.0 + pow(tau3 / (beta1 + eps), p));
+
+    double inv_sum = 1.0 / (a0 + a1);
+    double w0 = a0 * inv_sum;
+    double w1 = a1 * inv_sum;
+
+    // --- 7. Сборка ---
+    return w0 * P0 + w1 * P1;
+}
+
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
     double& A, double& B)
 {
