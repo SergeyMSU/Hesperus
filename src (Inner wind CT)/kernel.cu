@@ -23,7 +23,7 @@
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
-#define method_rieman (2)   // = 1
+
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -148,7 +148,16 @@
 #define snos_v_by_polar (true)   // = 1
 #define snos_b_by_polar (true)   // = 1
 #define snos_br_in_cell_by_r (true)   // = 1
+#define method_rieman (2)   // = 1
 
+// Раскомментируйте, чтобы включить WENO-Z3
+#define USE_WENO_Z3
+
+#ifdef USE_WENO_Z3
+#define INTERP weno_z3_or_linear
+#else
+#define INTERP linear
+#endif
 
 // TODO-1 если надо убрать фоновое магнитное поле
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -292,7 +301,7 @@ __host__ __device__ double linear(double x1, double t1, double x2, double t2, do
 //   x2, y2 : правая точка
 //   x_target : координата, куда сносим (должна быть между x1 и x2)
 
-__device__ __forceinline__ double weno_z3_interp_geom(
+__host__ __device__ __forceinline__ double weno_z3_interp_geom(
     double x0, double y0,
     double x1, double y1,
     double x2, double y2,
@@ -322,11 +331,11 @@ __device__ __forceinline__ double weno_z3_interp_geom(
     // --- 6. Нелинейные веса WENO-Z ---
     // Формула: alpha_k = gamma_k * (1 + (tau3 / (beta_k + eps))^p)
     // p = 1 рекомендуется для WENO3-Z; p = 2 даёт больше диссипации.
-    const double eps = 1.0e-6;
+    const double eps2 = 1.0e-6;
     const double p = 1.0;
 
-    double a0 = gamma0 * (1.0 + pow(tau3 / (beta0 + eps), p));
-    double a1 = gamma1 * (1.0 + pow(tau3 / (beta1 + eps), p));
+    double a0 = gamma0 * (1.0 + pow(tau3 / (beta0 + eps2), p));
+    double a1 = gamma1 * (1.0 + pow(tau3 / (beta1 + eps2), p));
 
     double inv_sum = 1.0 / (a0 + a1);
     double w0 = a0 * inv_sum;
@@ -334,6 +343,45 @@ __device__ __forceinline__ double weno_z3_interp_geom(
 
     // --- 7. Сборка ---
     return w0 * P0 + w1 * P1;
+}
+
+// Обёртка: если три точки в геометрической прогрессии (x2/x1 == x3/x2),
+// и целевая точка y лежит между x2 и x3, используем WENO-Z3.
+// Иначе откатываемся на minmod-linear.
+//
+// Семантика аргументов совпадает с linear():
+//   интерполяция в точку y, лежащую (в типичном использовании) между x2 и x3.
+
+__host__ __device__ __forceinline__ double weno_z3_or_linear(
+    double x1, double t1,
+    double x2, double t2,
+    double x3, double t3,
+    double y)
+{
+    // 1) log() требует строго положительных аргументов.
+    if (x1 > 0.0 && x2 > 0.0 && x3 > 0.0 && y > 0.0)
+    {
+        // 2) Проверка геометричности сетки: rl == rr (с относительным допуском).
+        double rl = x2 / x1;
+        double rr = x3 / x2;
+        double denom = fmax(rl, rr);            // оба положительны, модуль не нужен
+
+        // Относительный допуск. 1e-6 хватает для чисто double-арифметики,
+        // но если сетка строилась через exp()/pow() с накоплением ошибок,
+        // может потребоваться 1e-5..1e-4. Подберите эмпирически.
+        if (fabs(rl - rr) < 1.0e-6 * denom)
+        {
+            // 3) Целевая точка должна быть внутри отрезка [x2, x3],
+            //    иначе WENO будет экстраполировать и потеряет точность.
+            if (y >= x2 && y <= x3)
+            {
+                return weno_z3_interp_geom(x1, t1, x2, t2, x3, t3, y);
+            }
+        }
+    }
+
+    // Fallback: minmod-linear (ваша текущая схема).
+    return linear(x1, t1, x2, t2, x3, t3, y);
 }
 
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
@@ -663,13 +711,13 @@ __global__ void compute_fluxes(
 
                 if (j == M - 1)
                 {
-                    phi2 = pi / 2.0; //pi - phi1;
+                    phi2 = pi - phi1;
                     phi4 = pi - phi3;
                 }
                 else if (j == M - 2)
                 {
                     phi2 = PHI_CENTER(j + 1);
-                    phi4 = pi / 2.0; //pi - phi2;
+                    phi4 = pi - phi2;
                 }
                 else
                 {
@@ -678,16 +726,16 @@ __global__ void compute_fluxes(
                 }
 
                 
-                rho_L = linear(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
+                rho_L = INTERP(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
+                rho_R = INTERP(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
 
-                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
-                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
+                Vz_L = INTERP(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
+                Vz_R = INTERP(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
 
-                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 1], phi1, sh_Bz[i_l][j_l], phi2, sh_Bz[i_l][j_l + 1], phi_g);
-                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 2], phi2, sh_Bz[i_l][j_l + 1], phi1, sh_Bz[i_l][j_l], phi_g);
+                Bz_L = INTERP(phi3, sh_Bz[i_l][j_l - 1], phi1, sh_Bz[i_l][j_l], phi2, sh_Bz[i_l][j_l + 1], phi_g);
+                Bz_R = INTERP(phi4, sh_Bz[i_l][j_l + 2], phi2, sh_Bz[i_l][j_l + 1], phi1, sh_Bz[i_l][j_l], phi_g);
 
                 // Скорости Vx, Vy
                 if (true)
@@ -702,8 +750,8 @@ __global__ void compute_fluxes(
                         double Vr3 = sh_Vx[i_l][j_l - 1] * cos(phi3) + sh_Vy[i_l][j_l - 1] * sin(phi3);
                         double Vr4 = sh_Vx[i_l][j_l + 2] * cos(phi4) + sh_Vy[i_l][j_l + 2] * sin(phi4);
 
-                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
-                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                        Vr_L = INTERP(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = INTERP(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
                     }
 
                     // Vphi
@@ -714,8 +762,8 @@ __global__ void compute_fluxes(
                         double Vphi3 = -sh_Vx[i_l][j_l - 1] * sin(phi3) + sh_Vy[i_l][j_l - 1] * cos(phi3);
                         double Vphi4 = -sh_Vx[i_l][j_l + 2] * sin(phi4) + sh_Vy[i_l][j_l + 2] * cos(phi4);
 
-                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
-                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                        Vphi_L = INTERP(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = INTERP(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
 
@@ -729,10 +777,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Vx_L = linear(phi3, sh_Vx[i_l][j_l - 1], phi1, sh_Vx[i_l][j_l], phi2, sh_Vx[i_l][j_l + 1], phi_g);
-                        Vx_R = linear(phi4, sh_Vx[i_l][j_l + 2], phi2, sh_Vx[i_l][j_l + 1], phi1, sh_Vx[i_l][j_l], phi_g);
-                        Vy_L = linear(phi3, sh_Vy[i_l][j_l - 1], phi1, sh_Vy[i_l][j_l], phi2, sh_Vy[i_l][j_l + 1], phi_g);
-                        Vy_R = linear(phi4, sh_Vy[i_l][j_l + 2], phi2, sh_Vy[i_l][j_l + 1], phi1, sh_Vy[i_l][j_l], phi_g);
+                        Vx_L = INTERP(phi3, sh_Vx[i_l][j_l - 1], phi1, sh_Vx[i_l][j_l], phi2, sh_Vx[i_l][j_l + 1], phi_g);
+                        Vx_R = INTERP(phi4, sh_Vx[i_l][j_l + 2], phi2, sh_Vx[i_l][j_l + 1], phi1, sh_Vx[i_l][j_l], phi_g);
+                        Vy_L = INTERP(phi3, sh_Vy[i_l][j_l - 1], phi1, sh_Vy[i_l][j_l], phi2, sh_Vy[i_l][j_l + 1], phi_g);
+                        Vy_R = INTERP(phi4, sh_Vy[i_l][j_l + 2], phi2, sh_Vy[i_l][j_l + 1], phi1, sh_Vy[i_l][j_l], phi_g);
                     }
                 }
 
@@ -749,8 +797,8 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l][j_l - 1] * cos(phi3) + sh_By[i_l][j_l - 1] * sin(phi3);
                         double Br4 = sh_Bx[i_l][j_l + 2] * cos(phi4) + sh_By[i_l][j_l + 2] * sin(phi4);
 
-                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
-                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                        Br_L = INTERP(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = INTERP(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
                     }
 
                     // Bphi
@@ -761,8 +809,8 @@ __global__ void compute_fluxes(
                         double Bphi3 = -sh_Bx[i_l][j_l - 1] * sin(phi3) + sh_By[i_l][j_l - 1] * cos(phi3);
                         double Bphi4 = -sh_Bx[i_l][j_l + 2] * sin(phi4) + sh_By[i_l][j_l + 2] * cos(phi4);
 
-                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
-                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                        Bphi_L = INTERP(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = INTERP(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
 
@@ -776,10 +824,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Bx_L = linear(phi3, sh_Bx[i_l][j_l - 1], phi1, sh_Bx[i_l][j_l], phi2, sh_Bx[i_l][j_l + 1], phi_g);
-                        Bx_R = linear(phi4, sh_Bx[i_l][j_l + 2], phi2, sh_Bx[i_l][j_l + 1], phi1, sh_Bx[i_l][j_l], phi_g);
-                        By_L = linear(phi3, sh_By[i_l][j_l - 1], phi1, sh_By[i_l][j_l], phi2, sh_By[i_l][j_l + 1], phi_g);
-                        By_R = linear(phi4, sh_By[i_l][j_l + 2], phi2, sh_By[i_l][j_l + 1], phi1, sh_By[i_l][j_l], phi_g);
+                        Bx_L = INTERP(phi3, sh_Bx[i_l][j_l - 1], phi1, sh_Bx[i_l][j_l], phi2, sh_Bx[i_l][j_l + 1], phi_g);
+                        Bx_R = INTERP(phi4, sh_Bx[i_l][j_l + 2], phi2, sh_Bx[i_l][j_l + 1], phi1, sh_Bx[i_l][j_l], phi_g);
+                        By_L = INTERP(phi3, sh_By[i_l][j_l - 1], phi1, sh_By[i_l][j_l], phi2, sh_By[i_l][j_l + 1], phi_g);
+                        By_R = INTERP(phi4, sh_By[i_l][j_l + 2], phi2, sh_By[i_l][j_l + 1], phi1, sh_By[i_l][j_l], phi_g);
                     }
                 }
            
@@ -898,16 +946,16 @@ __global__ void compute_fluxes(
                 phi1 = -pi - phi2;
                 phi3 = -pi - phi4;
 
-                rho_L = linear(phi3, sh_rho[i_l][j_l - 2], phi1, sh_rho[i_l][j_l - 1], phi2, sh_rho[i_l][j_l], phi_g);
+                rho_L = INTERP(phi3, sh_rho[i_l][j_l - 2], phi1, sh_rho[i_l][j_l - 1], phi2, sh_rho[i_l][j_l], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
+                rho_R = INTERP(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
 
-                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
-                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
+                Vz_L = INTERP(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
+                Vz_R = INTERP(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
 
-                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 2], phi1, sh_Bz[i_l][j_l - 1], phi2, sh_Bz[i_l][j_l], phi_g);
-                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 1], phi2, sh_Bz[i_l][j_l], phi1, sh_Bz[i_l][j_l - 1], phi_g);
+                Bz_L = INTERP(phi3, sh_Bz[i_l][j_l - 2], phi1, sh_Bz[i_l][j_l - 1], phi2, sh_Bz[i_l][j_l], phi_g);
+                Bz_R = INTERP(phi4, sh_Bz[i_l][j_l + 1], phi2, sh_Bz[i_l][j_l], phi1, sh_Bz[i_l][j_l - 1], phi_g);
 
                 // Скорости Vx, Vy
                 if (true)
@@ -922,8 +970,8 @@ __global__ void compute_fluxes(
                         double Vr3 = sh_Vx[i_l][j_l - 2] * cos(phi3) + sh_Vy[i_l][j_l - 2] * sin(phi3);
                         double Vr4 = sh_Vx[i_l][j_l + 1] * cos(phi4) + sh_Vy[i_l][j_l + 1] * sin(phi4);
 
-                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
-                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                        Vr_L = INTERP(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = INTERP(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
                     }
 
                     // Vphi
@@ -934,8 +982,8 @@ __global__ void compute_fluxes(
                         double Vphi3 = -sh_Vx[i_l][j_l - 2] * sin(phi3) + sh_Vy[i_l][j_l - 2] * cos(phi3);
                         double Vphi4 = -sh_Vx[i_l][j_l + 1] * sin(phi4) + sh_Vy[i_l][j_l + 1] * cos(phi4);
 
-                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
-                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                        Vphi_L = INTERP(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = INTERP(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
                     
@@ -949,10 +997,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Vx_L = linear(phi3, sh_Vx[i_l][j_l - 2], phi1, sh_Vx[i_l][j_l - 1], phi2, sh_Vx[i_l][j_l], phi_g);
-                        Vx_R = linear(phi4, sh_Vx[i_l][j_l + 1], phi2, sh_Vx[i_l][j_l], phi1, sh_Vx[i_l][j_l - 1], phi_g);
-                        Vy_L = linear(phi3, sh_Vy[i_l][j_l - 2], phi1, sh_Vy[i_l][j_l - 1], phi2, sh_Vy[i_l][j_l], phi_g);
-                        Vy_R = linear(phi4, sh_Vy[i_l][j_l + 1], phi2, sh_Vy[i_l][j_l], phi1, sh_Vy[i_l][j_l - 1], phi_g);
+                        Vx_L = INTERP(phi3, sh_Vx[i_l][j_l - 2], phi1, sh_Vx[i_l][j_l - 1], phi2, sh_Vx[i_l][j_l], phi_g);
+                        Vx_R = INTERP(phi4, sh_Vx[i_l][j_l + 1], phi2, sh_Vx[i_l][j_l], phi1, sh_Vx[i_l][j_l - 1], phi_g);
+                        Vy_L = INTERP(phi3, sh_Vy[i_l][j_l - 2], phi1, sh_Vy[i_l][j_l - 1], phi2, sh_Vy[i_l][j_l], phi_g);
+                        Vy_R = INTERP(phi4, sh_Vy[i_l][j_l + 1], phi2, sh_Vy[i_l][j_l], phi1, sh_Vy[i_l][j_l - 1], phi_g);
                     }
                 }
 
@@ -969,8 +1017,8 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l][j_l - 2] * cos(phi3) + sh_By[i_l][j_l - 2] * sin(phi3);
                         double Br4 = sh_Bx[i_l][j_l + 1] * cos(phi4) + sh_By[i_l][j_l + 1] * sin(phi4);
 
-                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
-                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                        Br_L = INTERP(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = INTERP(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
                     }
 
                     // Bphi
@@ -981,8 +1029,8 @@ __global__ void compute_fluxes(
                         double Bphi3 = -sh_Bx[i_l][j_l - 2] * sin(phi3) + sh_By[i_l][j_l - 2] * cos(phi3);
                         double Bphi4 = -sh_Bx[i_l][j_l + 1] * sin(phi4) + sh_By[i_l][j_l + 1] * cos(phi4);
 
-                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
-                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                        Bphi_L = INTERP(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = INTERP(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
                     if (snos_b_by_polar == true)
@@ -995,10 +1043,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Bx_L = linear(phi3, sh_Bx[i_l][j_l - 2], phi1, sh_Bx[i_l][j_l - 1], phi2, sh_Bx[i_l][j_l], phi_g);
-                        Bx_R = linear(phi4, sh_Bx[i_l][j_l + 1], phi2, sh_Bx[i_l][j_l], phi1, sh_Bx[i_l][j_l - 1], phi_g);
-                        By_L = linear(phi3, sh_By[i_l][j_l - 2], phi1, sh_By[i_l][j_l - 1], phi2, sh_By[i_l][j_l], phi_g);
-                        By_R = linear(phi4, sh_By[i_l][j_l + 1], phi2, sh_By[i_l][j_l], phi1, sh_By[i_l][j_l - 1], phi_g);
+                        Bx_L = INTERP(phi3, sh_Bx[i_l][j_l - 2], phi1, sh_Bx[i_l][j_l - 1], phi2, sh_Bx[i_l][j_l], phi_g);
+                        Bx_R = INTERP(phi4, sh_Bx[i_l][j_l + 1], phi2, sh_Bx[i_l][j_l], phi1, sh_Bx[i_l][j_l - 1], phi_g);
+                        By_L = INTERP(phi3, sh_By[i_l][j_l - 2], phi1, sh_By[i_l][j_l - 1], phi2, sh_By[i_l][j_l], phi_g);
+                        By_R = INTERP(phi4, sh_By[i_l][j_l + 1], phi2, sh_By[i_l][j_l], phi1, sh_By[i_l][j_l - 1], phi_g);
                     }
                 }
             }
@@ -1167,24 +1215,24 @@ __global__ void compute_fluxes(
 
                 if (snos_rho_by_rr == true)
                 {
-                    rho_L = linear(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                    rho_L = INTERP(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
                     if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                    rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
+                    rho_R = INTERP(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
                     if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
                 }
                 else
                 {
-                    rho_L = linear(r3, sh_rho[i_l - 1][j_l], r, sh_rho[i_l][j_l], r2, sh_rho[i_l + 1][j_l], r_g);
+                    rho_L = INTERP(r3, sh_rho[i_l - 1][j_l], r, sh_rho[i_l][j_l], r2, sh_rho[i_l + 1][j_l], r_g);
                     if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                    rho_R = linear(r4, sh_rho[i_l + 2][j_l], r2, sh_rho[i_l + 1][j_l], r, sh_rho[i_l][j_l], r_g);
+                    rho_R = INTERP(r4, sh_rho[i_l + 2][j_l], r2, sh_rho[i_l + 1][j_l], r, sh_rho[i_l][j_l], r_g);
                     if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
                 }
 
-                Vz_L = linear(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
-                Vz_R = linear(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
+                Vz_L = INTERP(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
+                Vz_R = INTERP(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
 
-                Bz_L = linear(r3, sh_Bz[i_l - 1][j_l], r, sh_Bz[i_l][j_l], r2, sh_Bz[i_l + 1][j_l], r_g);
-                Bz_R = linear(r4, sh_Bz[i_l + 2][j_l], r2, sh_Bz[i_l + 1][j_l], r, sh_Bz[i_l][j_l], r_g);
+                Bz_L = INTERP(r3, sh_Bz[i_l - 1][j_l], r, sh_Bz[i_l][j_l], r2, sh_Bz[i_l + 1][j_l], r_g);
+                Bz_R = INTERP(r4, sh_Bz[i_l + 2][j_l], r2, sh_Bz[i_l + 1][j_l], r, sh_Bz[i_l][j_l], r_g);
 
 
                 // Скорости Vx, Vy
@@ -1221,8 +1269,8 @@ __global__ void compute_fluxes(
                         }
                         
 
-                        Vr_L = linear(r3, Vr3, r, Vr1, r2, Vr2, r_g);
-                        Vr_R = linear(r4, Vr4, r2, Vr2, r, Vr1, r_g);
+                        Vr_L = INTERP(r3, Vr3, r, Vr1, r2, Vr2, r_g);
+                        Vr_R = INTERP(r4, Vr4, r2, Vr2, r, Vr1, r_g);
                     }
 
                     // Vphi
@@ -1233,8 +1281,8 @@ __global__ void compute_fluxes(
                         double Vr3 = -sh_Vx[i_l - 1][j_l] * sin(phi_g) + sh_Vy[i_l - 1][j_l] * cos(phi_g);
                         double Vr4 = -sh_Vx[i_l + 2][j_l] * sin(phi_g) + sh_Vy[i_l + 2][j_l] * cos(phi_g);
 
-                        Vphi_L = linear(r3, Vr3, r, Vr, r2, Vr2, r_g);
-                        Vphi_R = linear(r4, Vr4, r2, Vr2, r, Vr, r_g);
+                        Vphi_L = INTERP(r3, Vr3, r, Vr, r2, Vr2, r_g);
+                        Vphi_R = INTERP(r4, Vr4, r2, Vr2, r, Vr, r_g);
                     }
 
 
@@ -1248,10 +1296,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Vx_L = linear(r3, sh_Vx[i_l - 1][j_l], r, sh_Vx[i_l][j_l], r2, sh_Vx[i_l + 1][j_l], r_g);
-                        Vx_R = linear(r4, sh_Vx[i_l + 2][j_l], r2, sh_Vx[i_l + 1][j_l], r, sh_Vx[i_l][j_l], r_g);
-                        Vy_L = linear(r3, sh_Vy[i_l - 1][j_l], r, sh_Vy[i_l][j_l], r2, sh_Vy[i_l + 1][j_l], r_g);
-                        Vy_R = linear(r4, sh_Vy[i_l + 2][j_l], r2, sh_Vy[i_l + 1][j_l], r, sh_Vy[i_l][j_l], r_g);
+                        Vx_L = INTERP(r3, sh_Vx[i_l - 1][j_l], r, sh_Vx[i_l][j_l], r2, sh_Vx[i_l + 1][j_l], r_g);
+                        Vx_R = INTERP(r4, sh_Vx[i_l + 2][j_l], r2, sh_Vx[i_l + 1][j_l], r, sh_Vx[i_l][j_l], r_g);
+                        Vy_L = INTERP(r3, sh_Vy[i_l - 1][j_l], r, sh_Vy[i_l][j_l], r2, sh_Vy[i_l + 1][j_l], r_g);
+                        Vy_R = INTERP(r4, sh_Vy[i_l + 2][j_l], r2, sh_Vy[i_l + 1][j_l], r, sh_Vy[i_l][j_l], r_g);
                     }
                 }
 
@@ -1268,8 +1316,8 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l - 1][j_l] * cos(phi_g) + sh_By[i_l - 1][j_l] * sin(phi_g);
                         double Br4 = sh_Bx[i_l + 2][j_l] * cos(phi_g) + sh_By[i_l + 2][j_l] * sin(phi_g);
 
-                        Br_L = linear(r3, Br3, r, Br1, r2, Br2, r_g);
-                        Br_R = linear(r4, Br4, r2, Br2, r, Br1, r_g);
+                        Br_L = INTERP(r3, Br3, r, Br1, r2, Br2, r_g);
+                        Br_R = INTERP(r4, Br4, r2, Br2, r, Br1, r_g);
                     }
 
                     // Bphi
@@ -1280,8 +1328,8 @@ __global__ void compute_fluxes(
                         double Br3 = -sh_Bx[i_l - 1][j_l] * sin(phi_g) + sh_By[i_l - 1][j_l] * cos(phi_g);
                         double Br4 = -sh_Bx[i_l + 2][j_l] * sin(phi_g) + sh_By[i_l + 2][j_l] * cos(phi_g);
 
-                        Bphi_L = linear(r3, Br3, r, Br, r2, Br2, r_g);
-                        Bphi_R = linear(r4, Br4, r2, Br2, r, Br, r_g);
+                        Bphi_L = INTERP(r3, Br3, r, Br, r2, Br2, r_g);
+                        Bphi_R = INTERP(r4, Br4, r2, Br2, r, Br, r_g);
                     }
 
 
@@ -1295,10 +1343,10 @@ __global__ void compute_fluxes(
                     }
                     else
                     {
-                        Bx_L = linear(r3, sh_Bx[i_l - 1][j_l], r, sh_Bx[i_l][j_l], r2, sh_Bx[i_l + 1][j_l], r_g);
-                        Bx_R = linear(r4, sh_Bx[i_l + 2][j_l], r2, sh_Bx[i_l + 1][j_l], r, sh_Bx[i_l][j_l], r_g);
-                        By_L = linear(r3, sh_By[i_l - 1][j_l], r, sh_By[i_l][j_l], r2, sh_By[i_l + 1][j_l], r_g);
-                        By_R = linear(r4, sh_By[i_l + 2][j_l], r2, sh_By[i_l + 1][j_l], r, sh_By[i_l][j_l], r_g);
+                        Bx_L = INTERP(r3, sh_Bx[i_l - 1][j_l], r, sh_Bx[i_l][j_l], r2, sh_Bx[i_l + 1][j_l], r_g);
+                        Bx_R = INTERP(r4, sh_Bx[i_l + 2][j_l], r2, sh_Bx[i_l + 1][j_l], r, sh_Bx[i_l][j_l], r_g);
+                        By_L = INTERP(r3, sh_By[i_l - 1][j_l], r, sh_By[i_l][j_l], r2, sh_By[i_l + 1][j_l], r_g);
+                        By_R = INTERP(r4, sh_By[i_l + 2][j_l], r2, sh_By[i_l + 1][j_l], r, sh_By[i_l][j_l], r_g);
                     }
                 }
             }
@@ -1387,14 +1435,14 @@ __global__ void compute_fluxes(
 
 
                 rho_L = sh_rho[i_l - 1][j_l];
-                rho_R = rho_L; // linear(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
+                rho_R = rho_L; // INTERP(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
                 //if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l];
 
                 Vz_L = sh_Vz[i_l - 1][j_l];
-                Vz_R = Vz_L; // linear(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
+                Vz_R = Vz_L; // INTERP(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
 
                 Bz_L = sh_Bz[i_l - 1][j_l];
-                Bz_R = Bz_L; // linear(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
+                Bz_R = Bz_L; // INTERP(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
 
                 // Скорости Vx, Vy
                 Vx_L = sh_Vx[i_l - 1][j_l];
@@ -2371,9 +2419,9 @@ int main(void)
     // "save_paper-2_1(350x256).bin"
     //string name1 = "save_Test1.bin";   // Откуда скачиваем сетку
     string name1 = "save_GD.bin";   // Откуда скачиваем сетку
-    string name2 = "save_Test3.bin";   // Куда сохраняем сетку
+    string name2 = "save_Test4.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 10; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 30; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
     double time_razmer = 1.5300;
     double Mass_rashod_razmer = 283.113;
