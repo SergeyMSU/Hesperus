@@ -10,13 +10,13 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 310 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 100 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 1240 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 400 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.021) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define qb (1.005208) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.0624) // (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.015237) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define BX 16   // Размеры блока потоков 
 #define BY 16   // Размеры блока потоков 
@@ -2418,10 +2418,12 @@ int main(void)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
     //string name1 = "save_Test1.bin";   // Откуда скачиваем сетку
-    string name1 = "save_GD.bin";   // Откуда скачиваем сетку
-    string name2 = "save_Test4.bin";   // Куда сохраняем сетку
+    //string name1 = "save_GD.bin";   // Откуда скачиваем сетку
+    string name1 = "save_GD-small-greed-2.bin";   // Откуда скачиваем сетку
+    string name2 = "save_Test-1-small-greed-2.bin";   // Куда сохраняем сетку
+    //string name2 = "save_Test4.bin";   // Куда сохраняем сетку
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 17000 * 30; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 17000 * 60; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 30.0; // С каким периодом выводим в часах
     double time_razmer = 1.5300;
     double Mass_rashod_razmer = 283.113;
@@ -2682,10 +2684,10 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            //h_cell.rho[k] = rho;
-            //h_cell.Vx[k] = vr * x / dist;
-            //h_cell.Vy[k] = vr * y / dist;
-            //h_cell.Vz[k] = 0.0;
+            h_cell.rho[k] = rho;
+            h_cell.Vx[k] = vr * x / dist;
+            h_cell.Vy[k] = vr * y / dist;
+            h_cell.Vz[k] = 0.0;
 
             //h_cell.rho[k] = 1.0;
             //h_cell.Vx[k] = 1.0 * x / dist;
