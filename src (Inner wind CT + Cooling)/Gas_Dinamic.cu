@@ -190,7 +190,7 @@ __device__ double HLLDQ_Korolkov(const double& ro_L, const double& Q_L, const do
 
         if (isnan(SL) == true || isnan(SR) == true)
         {
-            printf("Problems SL SR = %lf, %lf, %lf, %lf, %lf \n", SL, SR, aC, cC, cfC);
+            printf("Problems SL SR = %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf \n", SL, SR, aC, cC, cfC, ro_L, ro_R, p_L, p_R);
         }
     }
 

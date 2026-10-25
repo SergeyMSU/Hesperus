@@ -12,20 +12,25 @@
 #include "cooling_device.cuh"
 
 #define Omega 0.0
-#define N 350 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define N 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
 #define M 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
-#define Rb (6.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.02) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define Rb (15.0)  // (6.0)             // Внешний радиус сетки
+#define qb (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.02) // (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define BX 16   // Размеры блока потоков 
 #define BY 16   // Размеры блока потоков 
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
-#define method_rieman (1)   // = 20
+
+
+// Определим версию   1 - HSE,  2 - Nuclon
+#ifndef VERSION
+#define VERSION 2  
+#endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -126,14 +131,26 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.000119365 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
-//#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 1.0 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
+#define const_p 0.00109754 // 0.00109755
+#define rho_in 84.1141 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 #define p_in (rho_in * const_p) 
+#define T_eff (40000.0)    // Teff в Кельвинах
+#define Time_sec (18988.9)    // Безразмерное время в секундах
 
-#define F_grav (-0.0875475)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0449595)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.0124885) // (0.067358)     // Коэффициент внутри line-driven силы
+
+#if VERSION == 1
+#define rho_cgs (2.76383E-13)
+#elif VERSION == 2
+#define rho_cgs (1.07937E-15)
+#else
+#error "Unsupported VERSION"
+#endif
+
+//#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
+
+#define F_grav (-0.5)           // Коэффициент перед силой гравитации (-0.5)
+#define F_continuum (0.0)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line  (1.4855) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
@@ -141,10 +158,31 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.317705// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+
+// 7.10158    22.4519    70.9011   141.802
+#define Bo_init 70.9011// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.0)  // (0.266667)   //   Скорость вращения звезды
+
+#define V_phi_init (0.176814)  // (0.176814)   //   Скорость вращения звезды
+
+
+#define snos_rho_by_rr (true)   // = 1
+#define snos_near_surface (true)  
+#define snos_v_by_polar (true)   // = 1
+#define snos_b_by_polar (true)   // = 1
+#define snos_br_in_cell_by_r (true)   // = 1
+#define method_rieman (1)   // = 2
+#define method_laks_r (1.05)   // = 1
+
+// Раскомментируйте, чтобы включить WENO-Z3
+//#define USE_WENO_Z3
+
+#ifdef USE_WENO_Z3
+#define INTERP weno_z3_or_linear
+#else
+#define INTERP linear
+#endif
 
 
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -283,6 +321,100 @@ __device__ void linear2(double x1, double t1, double x2, double t2, double x3, d
     //printf("%lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf \n", x1, t1, x2, t2, x3, t3, y1, y2, A, B);
     return;
 }
+
+// WENO-Z3 для геометрической сетки x_{i+1}/x_i = d = const.
+// Внутри переходит к xi = ln(x), где сетка равномерна.
+// Реконструкция в точке x_target между x1 и x2 (в xi-пространстве t=0.5).
+//
+// Аргументы:
+//   x0, y0 : левая точка
+//   x1, y1 : центральная точка (для которой строится реконструкция)
+//   x2, y2 : правая точка
+//   x_target : координата, куда сносим (должна быть между x1 и x2)
+
+__host__ __device__ __forceinline__ double weno_z3_interp_geom(
+    double x0, double y0,
+    double x1, double y1,
+    double x2, double y2,
+    double x_target)
+{
+    // --- 1. Переход в логарифмические координаты ---
+    double xi1 = log(x1);
+    double xi_t = log(x_target);
+    double h = 0.5 * ((log(x1) - log(x0)) + (log(x2) - log(x1)));
+    double t = (xi_t - xi1) / h;   // для грани между x1, x2: t = 0.5
+
+    // --- 2. Два линейных полинома-кандидата ---
+    double P0 = y1 + (y1 - y0) * t;          // экстраполяция влево
+    double P1 = y1 + (y2 - y1) * t;          // интерполяция
+
+    // --- 3. Локальные индикаторы гладкости ---
+    double beta0 = (y1 - y0) * (y1 - y0);
+    double beta1 = (y2 - y1) * (y2 - y1);
+
+    // --- 4. Глобальный индикатор гладкости (WENO-Z) ---
+    double tau3 = fabs(beta0 - beta1);
+
+    // --- 5. Линейные веса для точечных значений при t = 0.5 ---
+    const double gamma0 = 0.25;   // 1/4
+    const double gamma1 = 0.75;   // 3/4
+
+    // --- 6. Нелинейные веса WENO-Z ---
+    // Формула: alpha_k = gamma_k * (1 + (tau3 / (beta_k + eps))^p)
+    // p = 1 рекомендуется для WENO3-Z; p = 2 даёт больше диссипации.
+    const double eps2 = 1.0e-6;
+    const double p = 1.0;
+
+    double a0 = gamma0 * (1.0 + pow(tau3 / (beta0 + eps2), p));
+    double a1 = gamma1 * (1.0 + pow(tau3 / (beta1 + eps2), p));
+
+    double inv_sum = 1.0 / (a0 + a1);
+    double w0 = a0 * inv_sum;
+    double w1 = a1 * inv_sum;
+
+    // --- 7. Сборка ---
+    return w0 * P0 + w1 * P1;
+}
+
+// Обёртка: если три точки в геометрической прогрессии (x2/x1 == x3/x2),
+// и целевая точка y лежит между x2 и x3, используем WENO-Z3.
+// Иначе откатываемся на minmod-linear.
+//
+// Семантика аргументов совпадает с linear():
+//   интерполяция в точку y, лежащую (в типичном использовании) между x2 и x3.
+
+__host__ __device__ __forceinline__ double weno_z3_or_linear(
+    double x1, double t1,
+    double x2, double t2,
+    double x3, double t3,
+    double y)
+{
+    // 1) log() требует строго положительных аргументов.
+    if (x1 > 0.0 && x2 > 0.0 && x3 > 0.0 && y > 0.0)
+    {
+        // 2) Проверка геометричности сетки: rl == rr (с относительным допуском).
+        double rl = x2 / x1;
+        double rr = x3 / x2;
+        double denom = fmax(rl, rr);            // оба положительны, модуль не нужен
+
+        // Относительный допуск. 1e-6 хватает для чисто double-арифметики,
+        // но если сетка строилась через exp()/pow() с накоплением ошибок,
+        // может потребоваться 1e-5..1e-4. Подберите эмпирически.
+        if (fabs(rl - rr) < 1.0e-6 * denom)
+        {
+            // 3) Целевая точка должна быть внутри отрезка [x2, x3],
+            //    иначе WENO будет экстраполировать и потеряет точность.
+            if (y >= x2 && y <= x3)
+            {
+                return weno_z3_interp_geom(x1, t1, x2, t2, x3, t3, y);
+            }
+        }
+    }
+
+    // Fallback: minmod-linear (ваша текущая схема).
+    return linear(x1, t1, x2, t2, x3, t3, y);
+}
+
 
 __device__ int sign(double& x)
 {
@@ -620,21 +752,21 @@ __global__ void compute_fluxes(
                 }
 
 
-                rho_L = linear(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
+                rho_L = INTERP(phi3, sh_rho[i_l][j_l - 1], phi1, sh_rho[i_l][j_l], phi2, sh_rho[i_l][j_l + 1], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
+                rho_R = INTERP(phi4, sh_rho[i_l][j_l + 2], phi2, sh_rho[i_l][j_l + 1], phi1, sh_rho[i_l][j_l], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
 
-                p_L = linear(phi3, sh_p[i_l][j_l - 1], phi1, sh_p[i_l][j_l], phi2, sh_p[i_l][j_l + 1], phi_g);
+                p_L = INTERP(phi3, sh_p[i_l][j_l - 1], phi1, sh_p[i_l][j_l], phi2, sh_p[i_l][j_l + 1], phi_g);
                 if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
-                p_R = linear(phi4, sh_p[i_l][j_l + 2], phi2, sh_p[i_l][j_l + 1], phi1, sh_p[i_l][j_l], phi_g);
+                p_R = INTERP(phi4, sh_p[i_l][j_l + 2], phi2, sh_p[i_l][j_l + 1], phi1, sh_p[i_l][j_l], phi_g);
                 if (p_R <= 0.0) p_R = sh_p[i_l][j_l + 1];
 
-                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
-                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
+                Vz_L = INTERP(phi3, sh_Vz[i_l][j_l - 1], phi1, sh_Vz[i_l][j_l], phi2, sh_Vz[i_l][j_l + 1], phi_g);
+                Vz_R = INTERP(phi4, sh_Vz[i_l][j_l + 2], phi2, sh_Vz[i_l][j_l + 1], phi1, sh_Vz[i_l][j_l], phi_g);
 
-                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 1], phi1, sh_Bz[i_l][j_l], phi2, sh_Bz[i_l][j_l + 1], phi_g);
-                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 2], phi2, sh_Bz[i_l][j_l + 1], phi1, sh_Bz[i_l][j_l], phi_g);
+                Bz_L = INTERP(phi3, sh_Bz[i_l][j_l - 1], phi1, sh_Bz[i_l][j_l], phi2, sh_Bz[i_l][j_l + 1], phi_g);
+                Bz_R = INTERP(phi4, sh_Bz[i_l][j_l + 2], phi2, sh_Bz[i_l][j_l + 1], phi1, sh_Bz[i_l][j_l], phi_g);
 
                 // Скорости Vx, Vy
                 if (true)
@@ -649,8 +781,8 @@ __global__ void compute_fluxes(
                         double Vr3 = sh_Vx[i_l][j_l - 1] * cos(phi3) + sh_Vy[i_l][j_l - 1] * sin(phi3);
                         double Vr4 = sh_Vx[i_l][j_l + 2] * cos(phi4) + sh_Vy[i_l][j_l + 2] * sin(phi4);
 
-                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
-                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                        Vr_L = INTERP(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = INTERP(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
                     }
 
                     // Vphi
@@ -661,8 +793,8 @@ __global__ void compute_fluxes(
                         double Vphi3 = -sh_Vx[i_l][j_l - 1] * sin(phi3) + sh_Vy[i_l][j_l - 1] * cos(phi3);
                         double Vphi4 = -sh_Vx[i_l][j_l + 2] * sin(phi4) + sh_Vy[i_l][j_l + 2] * cos(phi4);
 
-                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
-                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                        Vphi_L = INTERP(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = INTERP(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
                     Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
@@ -685,8 +817,8 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l][j_l - 1] * cos(phi3) + sh_By[i_l][j_l - 1] * sin(phi3);
                         double Br4 = sh_Bx[i_l][j_l + 2] * cos(phi4) + sh_By[i_l][j_l + 2] * sin(phi4);
 
-                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
-                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                        Br_L = INTERP(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = INTERP(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
                     }
 
                     // Bphi
@@ -697,8 +829,8 @@ __global__ void compute_fluxes(
                         double Bphi3 = -sh_Bx[i_l][j_l - 1] * sin(phi3) + sh_By[i_l][j_l - 1] * cos(phi3);
                         double Bphi4 = -sh_Bx[i_l][j_l + 2] * sin(phi4) + sh_By[i_l][j_l + 2] * cos(phi4);
 
-                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
-                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                        Bphi_L = INTERP(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = INTERP(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
                     Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
@@ -757,13 +889,21 @@ __global__ void compute_fluxes(
 
 
 
-                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l][j_l + 1] < 1.0E-5))
+                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-3 || sh_rho[i_l][j_l + 1] < 1.0E-3))
                 {
                     method = 0;
 
                     rho_L = sh_rho[i_l][j_l];
                     rho_R = sh_rho[i_l][j_l + 1];
                 }
+
+                if (r < method_laks_r)
+                {
+                    method = 0;
+                }
+
+                //p_L = const_p * rho_L;
+                //p_R = const_p * rho_R;
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
@@ -825,21 +965,21 @@ __global__ void compute_fluxes(
                 phi1 = -pi - phi2;
                 phi3 = -pi - phi4;
 
-                rho_L = linear(phi3, sh_rho[i_l][j_l - 2], phi1, sh_rho[i_l][j_l - 1], phi2, sh_rho[i_l][j_l], phi_g);
+                rho_L = INTERP(phi3, sh_rho[i_l][j_l - 2], phi1, sh_rho[i_l][j_l - 1], phi2, sh_rho[i_l][j_l], phi_g);
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
+                rho_R = INTERP(phi4, sh_rho[i_l][j_l + 1], phi2, sh_rho[i_l][j_l], phi1, sh_rho[i_l][j_l - 1], phi_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l + 1];
 
-                p_L = linear(phi3, sh_p[i_l][j_l - 2], phi1, sh_p[i_l][j_l - 1], phi2, sh_p[i_l][j_l], phi_g);
+                p_L = INTERP(phi3, sh_p[i_l][j_l - 2], phi1, sh_p[i_l][j_l - 1], phi2, sh_p[i_l][j_l], phi_g);
                 if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
-                p_R = linear(phi4, sh_p[i_l][j_l + 1], phi2, sh_p[i_l][j_l], phi1, sh_p[i_l][j_l - 1], phi_g);
+                p_R = INTERP(phi4, sh_p[i_l][j_l + 1], phi2, sh_p[i_l][j_l], phi1, sh_p[i_l][j_l - 1], phi_g);
                 if (p_R <= 0.0) p_R = sh_p[i_l][j_l + 1];
 
-                Vz_L = linear(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
-                Vz_R = linear(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
+                Vz_L = INTERP(phi3, sh_Vz[i_l][j_l - 2], phi1, sh_Vz[i_l][j_l - 1], phi2, sh_Vz[i_l][j_l], phi_g);
+                Vz_R = INTERP(phi4, sh_Vz[i_l][j_l + 1], phi2, sh_Vz[i_l][j_l], phi1, sh_Vz[i_l][j_l - 1], phi_g);
 
-                Bz_L = linear(phi3, sh_Bz[i_l][j_l - 2], phi1, sh_Bz[i_l][j_l - 1], phi2, sh_Bz[i_l][j_l], phi_g);
-                Bz_R = linear(phi4, sh_Bz[i_l][j_l + 1], phi2, sh_Bz[i_l][j_l], phi1, sh_Bz[i_l][j_l - 1], phi_g);
+                Bz_L = INTERP(phi3, sh_Bz[i_l][j_l - 2], phi1, sh_Bz[i_l][j_l - 1], phi2, sh_Bz[i_l][j_l], phi_g);
+                Bz_R = INTERP(phi4, sh_Bz[i_l][j_l + 1], phi2, sh_Bz[i_l][j_l], phi1, sh_Bz[i_l][j_l - 1], phi_g);
 
                 // Скорости Vx, Vy
                 if (true)
@@ -854,8 +994,8 @@ __global__ void compute_fluxes(
                         double Vr3 = sh_Vx[i_l][j_l - 2] * cos(phi3) + sh_Vy[i_l][j_l - 2] * sin(phi3);
                         double Vr4 = sh_Vx[i_l][j_l + 1] * cos(phi4) + sh_Vy[i_l][j_l + 1] * sin(phi4);
 
-                        Vr_L = linear(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
-                        Vr_R = linear(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
+                        Vr_L = INTERP(phi3, Vr3, phi1, Vr1, phi2, Vr2, phi_g);
+                        Vr_R = INTERP(phi4, Vr4, phi2, Vr2, phi1, Vr1, phi_g);
                     }
 
                     // Vphi
@@ -866,8 +1006,8 @@ __global__ void compute_fluxes(
                         double Vphi3 = -sh_Vx[i_l][j_l - 2] * sin(phi3) + sh_Vy[i_l][j_l - 2] * cos(phi3);
                         double Vphi4 = -sh_Vx[i_l][j_l + 1] * sin(phi4) + sh_Vy[i_l][j_l + 1] * cos(phi4);
 
-                        Vphi_L = linear(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
-                        Vphi_R = linear(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
+                        Vphi_L = INTERP(phi3, Vphi3, phi1, Vphi1, phi2, Vphi2, phi_g);
+                        Vphi_R = INTERP(phi4, Vphi4, phi2, Vphi2, phi1, Vphi1, phi_g);
                     }
 
                     Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
@@ -890,8 +1030,8 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l][j_l - 2] * cos(phi3) + sh_By[i_l][j_l - 2] * sin(phi3);
                         double Br4 = sh_Bx[i_l][j_l + 1] * cos(phi4) + sh_By[i_l][j_l + 1] * sin(phi4);
 
-                        Br_L = linear(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
-                        Br_R = linear(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
+                        Br_L = INTERP(phi3, Br3, phi1, Br1, phi2, Br2, phi_g);
+                        Br_R = INTERP(phi4, Br4, phi2, Br2, phi1, Br1, phi_g);
                     }
 
                     // Bphi
@@ -902,8 +1042,8 @@ __global__ void compute_fluxes(
                         double Bphi3 = -sh_Bx[i_l][j_l - 2] * sin(phi3) + sh_By[i_l][j_l - 2] * cos(phi3);
                         double Bphi4 = -sh_Bx[i_l][j_l + 1] * sin(phi4) + sh_By[i_l][j_l + 1] * cos(phi4);
 
-                        Bphi_L = linear(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
-                        Bphi_R = linear(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
+                        Bphi_L = INTERP(phi3, Bphi3, phi1, Bphi1, phi2, Bphi2, phi_g);
+                        Bphi_R = INTERP(phi4, Bphi4, phi2, Bphi2, phi1, Bphi1, phi_g);
                     }
 
                     Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
@@ -945,12 +1085,20 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (sh_rho[i_l][j_l - 1] < 1.0E-5 || sh_rho[i_l][j_l] < 1.0E-5))
+                if (r < 1.5 && (sh_rho[i_l][j_l - 1] < 1.0E-3 || sh_rho[i_l][j_l] < 1.0E-3))
                 {
                     method = 0;
                     rho_L = sh_rho[i_l][j_l - 1];
                     rho_R = sh_rho[i_l][j_l];
                 }
+
+                if (r < method_laks_r)
+                {
+                    method = 0;
+                }
+
+                //p_L = const_p * rho_L;
+                //p_R = const_p * rho_R;
 
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
@@ -1015,9 +1163,9 @@ __global__ void compute_fluxes(
                         Vr = Vr1;
                         //Vr = Vr1 + (Vr2 - Vr1) / (r2 - r) * (r3 - r);
 
-                         if (Vr > sqrt(ggg * const_p)) Vr = sqrt(ggg * const_p) / 1.1;   // Чтобы течение оставалось дозвуковым по r
+                         if (Vr > sqrt(ggg * p_in/ rho_in)) Vr = sqrt(ggg * p_in / rho_in) / 1.1;   // Чтобы течение оставалось дозвуковым по r
                          //if (Vr <= 0.0) Vr = 0.0;
-                         if (Vr < -sqrt(ggg * const_p)) Vr = -sqrt(ggg * const_p) / 1.1;
+                         if (Vr < -sqrt(ggg * p_in / rho_in)) Vr = -sqrt(ggg * p_in / rho_in) / 1.1;
 
                         if (false)
                         {
@@ -1076,21 +1224,46 @@ __global__ void compute_fluxes(
                 }
 
 
-                rho_L = linear(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                if (snos_rho_by_rr)
+                {
+                    rho_L = INTERP(r3, sh_rho[i_l - 1][j_l] * kv(r3), r, sh_rho[i_l][j_l] * kv(r), r2, sh_rho[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                    rho_R = INTERP(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
+                }
+                else
+                {
+                    rho_L = INTERP(r3, sh_rho[i_l - 1][j_l], r, sh_rho[i_l][j_l], r2, sh_rho[i_l + 1][j_l], r_g);
+                    rho_R = INTERP(r4, sh_rho[i_l + 2][j_l], r2, sh_rho[i_l + 1][j_l], r, sh_rho[i_l][j_l], r_g);
+                }
+
                 if (rho_L <= 0.0) rho_L = sh_rho[i_l][j_l];
-                rho_R = linear(r4, sh_rho[i_l + 2][j_l] * kv(r4), r2, sh_rho[i_l + 1][j_l] * kv(r2), r, sh_rho[i_l][j_l] * kv(r), r_g) / kv(r_g);
                 if (rho_R <= 0.0) rho_R = sh_rho[i_l + 1][j_l];
 
-                p_L = linear(r3, sh_p[i_l - 1][j_l] * kv(r3), r, sh_p[i_l][j_l] * kv(r), r2, sh_p[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
+                if (snos_near_surface == false && r < 1.01)
+                {
+                    rho_L = sh_rho[i_l][j_l] * kv(r) / kv(r_g);
+                    rho_R = sh_rho[i_l + 1][j_l] * kv(r2) / kv(r_g);
+                }
+
+                p_L = INTERP(r3, sh_p[i_l - 1][j_l] * kv(r3), r, sh_p[i_l][j_l] * kv(r), r2, sh_p[i_l + 1][j_l] * kv(r2), r_g) / kv(r_g);
                 if (p_L <= 0.0) p_L = sh_p[i_l][j_l];
-                p_R = linear(r4, sh_p[i_l + 2][j_l] * kv(r4), r2, sh_p[i_l + 1][j_l] * kv(r2), r, sh_p[i_l][j_l] * kv(r), r_g) / kv(r_g);
+                p_R = INTERP(r4, sh_p[i_l + 2][j_l] * kv(r4), r2, sh_p[i_l + 1][j_l] * kv(r2), r, sh_p[i_l][j_l] * kv(r), r_g) / kv(r_g);
                 if (p_R <= 0.0) p_R = sh_p[i_l + 1][j_l];
 
-                Vz_L = linear(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
-                Vz_R = linear(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
+                Vz_L = INTERP(r3, sh_Vz[i_l - 1][j_l], r, sh_Vz[i_l][j_l], r2, sh_Vz[i_l + 1][j_l], r_g);
+                Vz_R = INTERP(r4, sh_Vz[i_l + 2][j_l], r2, sh_Vz[i_l + 1][j_l], r, sh_Vz[i_l][j_l], r_g);
 
-                Bz_L = linear(r3, sh_Bz[i_l - 1][j_l], r, sh_Bz[i_l][j_l], r2, sh_Bz[i_l + 1][j_l], r_g);
-                Bz_R = linear(r4, sh_Bz[i_l + 2][j_l], r2, sh_Bz[i_l + 1][j_l], r, sh_Bz[i_l][j_l], r_g);
+                Bz_L = INTERP(r3, sh_Bz[i_l - 1][j_l], r, sh_Bz[i_l][j_l], r2, sh_Bz[i_l + 1][j_l], r_g);
+                Bz_R = INTERP(r4, sh_Bz[i_l + 2][j_l], r2, sh_Bz[i_l + 1][j_l], r, sh_Bz[i_l][j_l], r_g);
+
+                if (snos_near_surface == false && r < 1.01)
+                {
+                    p_L = sh_p[i_l][j_l];
+                    p_R = sh_p[i_l + 1][j_l];
+                    Vz_L = sh_Vz[i_l][j_l];
+                    Vz_R = sh_Vz[i_l + 1][j_l];
+                    Bz_L = sh_Bz[i_l][j_l];
+                    Bz_R = sh_Bz[i_l + 1][j_l];
+                }
 
 
                 // Скорости Vx, Vy
@@ -1112,8 +1285,8 @@ __global__ void compute_fluxes(
                             double h1 = r - r3;
                             double h2 = r2 - r;
                             double dVr_;
-                            dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
-                            //dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
+                            //dVr_ = (h1 * h1 * Vr2 + (h2 * h2 - h1 * h1) * Vr1 - h2 * h2 * Vr3) / (h1 * h2 * (h1 + h2));  // Второй порядок
+                            dVr_ = (Vr2 - Vr1) / h2;    // Первый порядок вправо
                             dVr[j * N + i] = dVr_;
 
                             // Попробуем ещё ограничить время каким-то типом волн, связанным с силой (но вроде бы из-за этого шаг по времени к нулю может стремиться
@@ -1127,8 +1300,14 @@ __global__ void compute_fluxes(
                         }
                         
 
-                        Vr_L = linear(r3, Vr3, r, Vr1, r2, Vr2, r_g);
-                        Vr_R = linear(r4, Vr4, r2, Vr2, r, Vr1, r_g);
+                        Vr_L = INTERP(r3, Vr3, r, Vr1, r2, Vr2, r_g);
+                        Vr_R = INTERP(r4, Vr4, r2, Vr2, r, Vr1, r_g);
+
+                        if (snos_near_surface == false && r < 1.01)
+                        {
+                            Vr_L = Vr1;
+                            Vr_R = Vr2;
+                        }
                     }
 
                     // Vphi
@@ -1139,8 +1318,13 @@ __global__ void compute_fluxes(
                         double Vr3 = -sh_Vx[i_l - 1][j_l] * sin(phi_g) + sh_Vy[i_l - 1][j_l] * cos(phi_g);
                         double Vr4 = -sh_Vx[i_l + 2][j_l] * sin(phi_g) + sh_Vy[i_l + 2][j_l] * cos(phi_g);
 
-                        Vphi_L = linear(r3, Vr3, r, Vr, r2, Vr2, r_g);
-                        Vphi_R = linear(r4, Vr4, r2, Vr2, r, Vr, r_g);
+                        Vphi_L = INTERP(r3, Vr3, r, Vr, r2, Vr2, r_g);
+                        Vphi_R = INTERP(r4, Vr4, r2, Vr2, r, Vr, r_g);
+                        if (snos_near_surface == false && r < 1.01)
+                        {
+                            Vphi_L = Vr;
+                            Vphi_R = Vr2;
+                        }
                     }
 
                     Vx_L = Vr_L * cos(phi_g) - Vphi_L * sin(phi_g);
@@ -1163,8 +1347,13 @@ __global__ void compute_fluxes(
                         double Br3 = sh_Bx[i_l - 1][j_l] * cos(phi_g) + sh_By[i_l - 1][j_l] * sin(phi_g);
                         double Br4 = sh_Bx[i_l + 2][j_l] * cos(phi_g) + sh_By[i_l + 2][j_l] * sin(phi_g);
 
-                        Br_L = linear(r3, Br3, r, Br1, r2, Br2, r_g);
-                        Br_R = linear(r4, Br4, r2, Br2, r, Br1, r_g);
+                        Br_L = INTERP(r3, Br3, r, Br1, r2, Br2, r_g);
+                        Br_R = INTERP(r4, Br4, r2, Br2, r, Br1, r_g);
+                        if (snos_near_surface == false && r < 1.01)
+                        {
+                            Br_L = Br1;
+                            Br_R = Br2;
+                        }
                     }
 
                     // Bphi
@@ -1175,8 +1364,13 @@ __global__ void compute_fluxes(
                         double Br3 = -sh_Bx[i_l - 1][j_l] * sin(phi_g) + sh_By[i_l - 1][j_l] * cos(phi_g);
                         double Br4 = -sh_Bx[i_l + 2][j_l] * sin(phi_g) + sh_By[i_l + 2][j_l] * cos(phi_g);
 
-                        Bphi_L = linear(r3, Br3, r, Br, r2, Br2, r_g);
-                        Bphi_R = linear(r4, Br4, r2, Br2, r, Br, r_g);
+                        Bphi_L = INTERP(r3, Br3, r, Br, r2, Br2, r_g);
+                        Bphi_R = INTERP(r4, Br4, r2, Br2, r, Br, r_g);
+                        if (snos_near_surface == false && r < 1.01)
+                        {
+                            Bphi_L = Br;
+                            Bphi_R = Br2;
+                        }
                     }
 
                     Bx_L = Br_L * cos(phi_g) - Bphi_L * sin(phi_g);
@@ -1218,22 +1412,30 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-5 || sh_rho[i_l + 1][j_l] < 1.0E-5))
+                if (r < 1.5 && (sh_rho[i_l][j_l] < 1.0E-3 || sh_rho[i_l + 1][j_l] < 1.0E-3))
                 {
                     method = 0;
                     rho_L = sh_rho[i_l][j_l];
                     rho_R = sh_rho[i_l + 1][j_l];
                 }
 
+                if (r < method_laks_r)
+                {
+                    method = 0;
+                }
+
+                //p_L = const_p * rho_L;
+                //p_R = const_p * rho_R;
+
                 tmin = my_min(tmin, HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
                     P, PQ, cos(phi_g), sin(phi_g), 0.0, SL, SR, DR(i), method));
 
-                /*if (tmin < 5.0E-7)
-                {
-                    printf("3 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
-                        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
-                }*/
+                //if (tmin < 1.3E-6)
+                //{
+                //    printf("3 Time = 0: %E, %E, %E, %E, %E, %E, %E, %E, %E,\n", tmin, r, phi_g, rho_L, rho_R, sqrt(kvv(Vx_L, Vy_L, Vz_L)),
+                //        sqrt(kvv(Vx_R, Vy_R, Vz_R)), sqrt(kvv(Bx_L, By_L, Bz_L)), sqrt(kvv(Bx_R, By_R, Bz_R)));
+                //}
 
                 /*if (i == print_i && j == print_j)
                 {
@@ -1272,17 +1474,17 @@ __global__ void compute_fluxes(
 
 
                 rho_L = sh_rho[i_l - 1][j_l];
-                rho_R = rho_L; // linear(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
+                rho_R = rho_L; // INTERP(r4, sh_rho[i_l + 1][j_l] * kv(r4), r2, sh_rho[i_l][j_l] * kv(r2), r1, sh_rho[i_l - 1][j_l] * kv(r1), r_g) / kv(r_g);
                 //if (rho_R <= 0.0) rho_R = sh_rho[i_l][j_l];
 
                 p_L = sh_p[i_l - 1][j_l];
                 p_R = p_L;
 
                 Vz_L = sh_Vz[i_l - 1][j_l];
-                Vz_R = Vz_L; // linear(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
+                Vz_R = Vz_L; // INTERP(r4, sh_Vz[i_l + 1][j_l], r2, sh_Vz[i_l][j_l], r1, sh_Vz[i_l - 1][j_l], r_g);
 
                 Bz_L = sh_Bz[i_l - 1][j_l];
-                Bz_R = Bz_L; // linear(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
+                Bz_R = Bz_L; // INTERP(r4, sh_Bz[i_l + 1][j_l], r2, sh_Bz[i_l][j_l], r1, sh_Bz[i_l - 1][j_l], r_g);
 
                 // Скорости Vx, Vy
                 Vx_L = sh_Vx[i_l - 1][j_l];
@@ -1335,10 +1537,18 @@ __global__ void compute_fluxes(
                 double P[8];
                 P[0] = P[1] = P[2] = P[3] = P[4] = P[5] = P[6] = P[7] = 0.0;
 
-                if (r < 1.5 && (rho_L < 1.0E-5 || rho_R < 1.0E-5))
+                if (r < 1.5 && (rho_L < 1.0E-3 || rho_R < 1.0E-3))
                 {
                     method = 0;
                 }
+
+                if (r < method_laks_r)
+                {
+                    method = 0;
+                }
+
+                //p_L = const_p * rho_L;
+                //p_R = const_p * rho_R;
 
                 double tmin_ = HLLDQ_Korolkov(rho_L, 0.0, p_L, Vx_L, Vy_L, Vz_L, Bx_L, By_L, Bz_L,
                     rho_R, 0.0, p_R, Vx_R, Vy_R, Vz_R, Bx_R, By_R, Bz_R,
@@ -1809,7 +2019,13 @@ __global__ void update_cells(
             double Vr1 = Vx_1 * cos(phi) + Vy_1 * sin(phi);
             double dvdr = dVr[idx];
             const double tiny = 1e-12;
-            if (dvdr < tiny) dvdr = tiny;   // только положительный, как у ud-Doula
+
+            dvdr = fabs(dvdr);
+            if (dvdr < tiny) dvdr = tiny; 
+
+            //if (dvdr < tiny) dvdr = tiny;   // только положительный, как у ud-Doula
+
+
             double Rstar = 1.0;
             double sigma = (1.0 - Vr1 / (r * dvdr)) * (Rstar * Rstar) / (r * r);
             double oma = 1.0 + alpha_line;
@@ -1878,27 +2094,24 @@ __global__ void update_cells(
         //}
 
         // Нижнее ограничение на плотность (в петлях в какой-то момент плотность может стать очень маленькой, а альфвеновская скорость приближается к скорости света)
-        if (rho_2 < 1.0E-5 && r < 1.5)
+        if (rho_2 < 1.0E-3 && r < 1.5)
         {
-            rho_2 = 1.0E-5;
+            rho_2 = 1.0E-3;
 
             Vx[idx] = 0.0;
             Vy[idx] = 0.0;
             Vz[idx] = 0.0;
 
-            //if (rho_2 < 5.0E-6)
-            //{
-            //    rho_2 = 5.0E-6;
-            //    Vx[idx] *= rho_1 / rho_2;
-            //    Vy[idx] *= rho_1 / rho_2;
-            //    Vz[idx] *= rho_1 / rho_2;
-            //}
-            //else
-            //{
-            //    Vx[idx] = 0.0;
-            //    Vy[idx] = 0.0;
-            //    Vz[idx] = 0.0;
-            //}
+            bb = true;
+        }
+
+        if (rho_2 < 1.0 && r < 1.003)
+        {
+            rho_2 = 1.0;
+
+            Vx[idx] = 0.0;
+            Vy[idx] = 0.0;
+            Vz[idx] = 0.0;
 
             bb = true;
         }
@@ -1907,12 +2120,15 @@ __global__ void update_cells(
         {
             printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
             rho_2 = 1.0E-7;
-            p_2 = rho_2 * const_p * 0.2;
+            p_2 = rho_2 * const_p;
             Vx[idx] = 0.0;
             Vy[idx] = 0.0;
             Vz[idx] = 0.0;
             bb = true;
         }
+
+
+
 
         /*if (rho_2 > 300.0)
         {
@@ -2094,42 +2310,70 @@ __global__ void update_cells(
             - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
 
 
-        if (p_2 < 1E-11)
-        {
-            p_2 = 1E-11;
-        }
-
-
         double Temp = p_2 / rho_2 / const_p;
 
         // Если температура меньше эффективной температуры поверхности звезды
-        if (Temp < 0.2)
+        if (Temp < 1.0)
         {
-            Temp = 0.2;
+            Temp = 1.0;
             p_2 = const_p * rho_2 * Temp;
         }
 
-        
+        //p_2 = const_p * rho_2;
         p[idx] = p_2;
     }
 
     // cooling 
-    if (r > 1.05 && true)
+    if (r > 1.02 && false)
+    //if (true)
     {
-        double Temp = p_2 / rho_2 / const_p * 50000.0; // Считаем температуру в Кельвинах
-        double Temp2 = apply_cooling(Temp, dTime * 5508.33, rho_2 * 4.434495E-11, ggg, 0.6, 1.17, 1.4, tab)/ 50000.0;
+        double Temp = p_2 / rho_2 / const_p * T_eff; // Считаем температуру в Кельвинах
+        double Temp2 = apply_cooling(Temp, dTime * Time_sec, rho_2 * rho_cgs, ggg, 0.62, 1.17, 1.4, tab, T_eff)/ T_eff;
         // Проверка на floour температуру уже сидит внутри apply_cooling
+
+        if (isnan(Temp2) == true)
+        {
+            printf("ERROR NAN Temp2 =: %E, %E, %E, %E, %E, \n ", Temp2, Temp, rho_2, r, phi);
+            Temp2 = Temp;
+        }
         
         p_2 = const_p * rho_2 * Temp2;
         p[idx] = p_2;
     }
-
-    if (bb == false && r < 1.005 && sqrt(kvv(Vx_2, Vy_2, Vz_2) / (ggg * p_2 / rho_2)) > 1.0 )
+    else
     {
-        Vx[idx] = Vx[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
-        Vy[idx] = Vy[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
-        Vz[idx] = Vz[idx] / sqrt(kvv(Vx_2, Vy_2, Vz_2)) * 0.9 * sqrt(ggg * p_2 / rho_2);
+        // Держим изотерму вблизи поверхности звезды
+        //p_2 = const_p * rho_2;
+        //p[idx] = p_2;
     }
+
+    if (bb == false && r < 1.005)
+    {
+        double Vr = Vx[idx] * cos(phi) + Vy[idx] * sin(phi);
+
+        if (fabs(Vr) / sqrt(ggg * p_2 / rho_2) > 1.0)
+        {
+            double Vthe = -Vx[idx] * sin(phi) + Vy[idx] * cos(phi);
+            if (Vr > 0)
+            {
+                Vr = 0.9 * sqrt(ggg * p_2 / rho_2);
+            }
+            else
+            {
+                Vr = -0.9 * sqrt(ggg * p_2 / rho_2);
+            }
+
+            Vx[idx] = Vr * cos(phi) - Vthe * sin(phi);
+            Vy[idx] = Vr * sin(phi) + Vthe * cos(phi);
+        }
+    }
+
+
+    if (isnan(Vx[idx]) == true || isnan(rho_2) == true || isnan(p_2) == true)
+    {
+        printf("ERROR NAN =: %E, %E, %E, %E, %E, \n ", rho_2, p_2, Vx[idx], r, phi);
+    }
+
 
     if (i == print_i && j == print_j)
     {
@@ -2248,8 +2492,8 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
                     sqrt(kv(h_cell.Bz[k]));
             }
 
-            fout5 << x << " " << y << " " << h_cell.rho[k] * 4.3E-11 << " " << log10(h_cell.rho[k] * 4.3E-11) <<//
-                " " << h_cell.p[k] << " " << 50000.0 * h_cell.p[k]  / h_cell.rho[k] / const_p << " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
+            fout5 << x << " " << y << " " << h_cell.rho[k] << " " << log10(h_cell.rho[k] * 4.3E-11) <<//
+                " " << h_cell.p[k] << " " << 40000.0 * h_cell.p[k]  / h_cell.rho[k] / const_p << " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << sqrt(kvv(bx, by, h_cell.Bz[k])) << " " << Max << 
                 " " << Max_R << " " << Mach_Alph << " " << Mach_Alph_phi << endl;
         }
@@ -2278,15 +2522,28 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
-    string name1 = "save_D000.bin";   // Откуда скачиваем сетку
-    string name2 = "save_D000-test_compare.bin";   // Куда сохраняем сетку
-    bool save_setka = false;                      // Надо ли сохранять сетку?
-    int all_step = 60000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
-    double period_print = 30.0; // С каким периодом выводим в часах
-    double time_razmer = 1.53009;
-    double Mass_rashod_razmer = 286.211;
+
+
+#if VERSION == 1
+    string name1 = "save_Q3_1_3.bin";   // Откуда скачиваем сетку
+    string name2 = "save_Q3_5_3.bin";   // Куда сохраняем сетку
+    double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
+#elif VERSION == 2
+    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
+    string name2 = "save_Q3_6_3-.bin";   // Куда сохраняем сетку
+    double Mass_rashod_razmer = 1.0; //  0.0020847; //  0.0020847; // 0.533803;
+#else
+#error "Unsupported VERSION"
+#endif
+
+
+    bool save_setka = true;                      // Надо ли сохранять сетку?
+    int all_step = 2000000; // 17000 * 200; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    double period_print = 0.015; // С каким периодом выводим в часах
+    double time_razmer = 5.2747;
+    //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
 
     double host_dT = 1.0E30;
     double host_dT_max = 1.0E30;
@@ -2441,6 +2698,7 @@ int main(void)
         for (int k = 0; k < K; ++k) 
         {
             fin.read(reinterpret_cast<char*>(&h_cell.rho[k]), sizeof(double));
+            fin.read(reinterpret_cast<char*>(&h_cell.p[k]), sizeof(double));
             fin.read(reinterpret_cast<char*>(&h_cell.Vx[k]), sizeof(double));
             fin.read(reinterpret_cast<char*>(&h_cell.Vy[k]), sizeof(double));
             fin.read(reinterpret_cast<char*>(&h_cell.Vz[k]), sizeof(double));
@@ -2561,6 +2819,7 @@ int main(void)
             double rho = rho_in / kv(dist);
 
             h_cell.rho[k] = rho;
+            h_cell.p[k] = rho * const_p;
             h_cell.Vx[k] = vr * x / dist;
             h_cell.Vy[k] = vr * y / dist;
             h_cell.Vz[k] = 0.0;
@@ -2601,7 +2860,7 @@ int main(void)
     
 
     // Задаём давление
-    if (true)
+    if (false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
         {
@@ -2662,7 +2921,8 @@ int main(void)
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
     int num_ = 0;
 
-    std::ofstream out_rashod("rashod_" + name2);
+    std::ofstream out_rashod("rashod_" + name2, std::ios::app);
+    //std::ofstream out_rashod("rashod_" + name2, std::ios::app);
 
     // Глобальный цикл
     for (int step_ = 1; step_ <= all_step; step_++)
@@ -2701,7 +2961,7 @@ int main(void)
             cudaMemcpy(&host_dT, dT, sizeof(double), cudaMemcpyDeviceToHost);
             cudaStatus = cudaDeviceSynchronize();
             host_all_T += host_dT;
-            if (step_ % 500 == 0)
+            if (step_ % 5000 == 0)
             {
                 cout << "Step = " << step_ <<"   All_Time = " <<  host_all_T * time_razmer
                     << " hours,  dT =   " << std::scientific << host_dT * time_razmer << "  (" << host_dT << ")" << endl;
@@ -2866,7 +3126,7 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 50.0) break;
+        if (host_all_T * time_razmer > 200.0) break;
         //if (host_all_T * time_razmer > 125.0) break;
     }
 
@@ -2954,6 +3214,7 @@ int main(void)
         for (int k = 0; k < K; k++)
         {
             bfout.write((char*)&h_cell.rho[k], sizeof(double));
+            bfout.write((char*)&h_cell.p[k], sizeof(double));
             bfout.write((char*)&h_cell.Vx[k], sizeof(double));
             bfout.write((char*)&h_cell.Vy[k], sizeof(double));
             bfout.write((char*)&h_cell.Vz[k], sizeof(double));
@@ -2995,7 +3256,7 @@ int main(void)
     {
         ofstream fout1dr;
         fout1dr.open("param_for_texplot_1d_r_eqv.txt");
-        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"f_pole\", ZONE T = \"HP\"" << endl;
+        fout1dr << "TITLE = \"HP\"  VARIABLES = \"r\", \"Ro\", \"Vx\", \"Vy\",\"Vr\", \"Vthe\", \"Vphi\", \"Bx\", \"By\",\"Br\", \"Bthe\", \"Bphi\", \"Mach\", \"f_pole\", \"T_K\", ZONE T = \"HP\"" << endl;
 
         for (int i = 0; i < N - 1; i++)
         {
@@ -3027,7 +3288,7 @@ int main(void)
             fout1dr << r << " " << h_cell.rho[k] <<//
                 " " << h_cell.Vx[k] << " " << h_cell.Vy[k] << " " << Vr << " " << Vthe << " " << h_cell.Vz[k] <<
                 " " << bx << " " << by << " " << Br << " " << Bthe << " " << h_cell.Bz[k] << " " << Max << " " <<
-                1.0 / (r * r * max(sqrt(kvv(bx, by, h_cell.Bz[k])), 0.0001)) << endl;
+                1.0 / (r * r * max(sqrt(kvv(bx, by, h_cell.Bz[k])), 0.0001)) << " " << h_cell.p[k] / const_p / h_cell.rho[k] * T_eff << endl;
         }
 
         fout1dr.close();
