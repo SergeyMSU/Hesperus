@@ -12,13 +12,13 @@
 #include "cooling_device.cuh"
 
 #define Omega 0.0
-#define N 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define qb (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.0125) // (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define BX 16   // Размеры блока потоков 
 #define BY 16   // Размеры блока потоков 
@@ -164,7 +164,7 @@
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
-#define V_phi_init (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.0) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -172,7 +172,7 @@
 #define snos_v_by_polar (true)   // = 1
 #define snos_b_by_polar (true)   // = 1
 #define snos_br_in_cell_by_r (true)   // = 1
-#define method_rieman (2)   // = 2
+#define method_rieman (1)   // = 2
 #define method_laks_r (1.05)   // = 1
 
 // Раскомментируйте, чтобы включить WENO-Z3
@@ -2527,10 +2527,10 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q3_refirement_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q3_1_1.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_refirement_1_0.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
@@ -2540,9 +2540,8 @@ int main(void)
 #error "Unsupported VERSION"
 #endif
 
-
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 0; // 17000 * 200; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 150000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
@@ -3130,7 +3129,7 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 10.0) break;
+        if (host_all_T * time_razmer > 100.0) break;
         //if (host_all_T * time_razmer > 125.0) break;
     }
 
