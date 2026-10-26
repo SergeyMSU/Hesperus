@@ -27,9 +27,9 @@
 #define SHARED_J (BY + 2*HALO)   // = 20
 
 
-// Определим версию   1 - HSE,  2 - Nuclon
+// Определим версию   1 - HSE (сильное охлаждение, большая плотность),  2 - Nuclon
 #ifndef VERSION
-#define VERSION 2  
+#define VERSION 1 
 #endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
@@ -160,11 +160,11 @@
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
 
 // 7.10158    22.4519    70.9011   141.802
-#define Bo_init 70.9011// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init 0.0// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-
-#define V_phi_init (0.176814)  // (0.176814)   //   Скорость вращения звезды
+// 0.0707249    0.176814  0.282974  0.35408  0.424896
+#define V_phi_init (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -172,7 +172,7 @@
 #define snos_v_by_polar (true)   // = 1
 #define snos_b_by_polar (true)   // = 1
 #define snos_br_in_cell_by_r (true)   // = 1
-#define method_rieman (1)   // = 2
+#define method_rieman (2)   // = 2
 #define method_laks_r (1.05)   // = 1
 
 // Раскомментируйте, чтобы включить WENO-Z3
@@ -2324,8 +2324,8 @@ __global__ void update_cells(
     }
 
     // cooling 
-    if (r > 1.02 && false)
-    //if (true)
+    //if (r > 1.02 && true)
+    if (true)
     {
         double Temp = p_2 / rho_2 / const_p * T_eff; // Считаем температуру в Кельвинах
         double Temp2 = apply_cooling(Temp, dTime * Time_sec, rho_2 * rho_cgs, ggg, 0.62, 1.17, 1.4, tab, T_eff)/ T_eff;
@@ -2522,13 +2522,15 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
 
 
 #if VERSION == 1
-    string name1 = "save_Q3_1_3.bin";   // Откуда скачиваем сетку
-    string name2 = "save_Q3_5_3.bin";   // Куда сохраняем сетку
+    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
+    //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
+    //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_1_1.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
@@ -2540,7 +2542,7 @@ int main(void)
 
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 2000000; // 17000 * 200; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 0; // 17000 * 200; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
@@ -3075,6 +3077,7 @@ int main(void)
                 copyFromDevice(h_vFace.Pbz, d_vFace.Pbz, vFaceCount);
                 copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
                 double MM = 0.0;
+                double MMv2 = 0.0;
                 double MM2 = 0.0;
                 double MM3 = 0.0;
                 double Jgas = 0.0;
@@ -3112,21 +3115,22 @@ int main(void)
                     MM += (2.0 * pi * x * r * DPHI(k)) * h_vFace.Prho[idx_vface(N, k)];               // Расход массы
                     MM2 += 0.5 * Vr * cos(phi) * DPHI(k);    // Средняя скорость (простое угловое среднее)
                     MM3 += 2.0 * pi * kv(r) * rho * kv(Vr) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
-                    Jgas += 2.0 * pi * kv(r) * rho * Vr * vz * r * cos(phi) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
-                    Jmag += -2.0 * pi * kv(r) * rho * Br * bz / (4.0 * pi) * r * cos(phi) * cos(phi) * DPHI(k);    // Средняя скорость (взвешенная по массовому потоку)
+                    MMv2 += 2.0 * pi * kv(r) * rho * (Vr) * cos(phi) * DPHI(k);    // Расход массы (посчитанный по снесённым значениям)
+                    Jgas += 2.0 * pi * kv(r) * rho * Vr * vz * r * cos(phi) * cos(phi) * DPHI(k);    // 
+                    Jmag += -2.0 * pi * kv(r) * rho * Br * bz / (4.0 * pi) * r * cos(phi) * cos(phi) * DPHI(k);    // 
                 }
 
                 MM3 = MM3 / MM;
                 //cout << "MM = " << MM * Mass_rashod_razmer << "  10^-6 Msolar/year" << endl;
 
-                out_rashod << host_all_T * time_razmer << " " << MM * Mass_rashod_razmer << " " << MM2 << " " << MM3 << 
+                out_rashod << host_all_T * time_razmer << " " << MM * Mass_rashod_razmer << " " << MMv2 << " " << MM2 << " " << MM3 <<
                     " " << Jgas << " " << Jmag << " " << Jgas + Jmag << endl;
             }
 
         }
 
 
-        if (host_all_T * time_razmer > 200.0) break;
+        if (host_all_T * time_razmer > 10.0) break;
         //if (host_all_T * time_razmer > 125.0) break;
     }
 
