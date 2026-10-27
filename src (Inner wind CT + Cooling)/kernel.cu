@@ -2586,7 +2586,7 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q4_1_2.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q4_1_3.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
     string name2 = "save_Q4_1_3.bin";   // Куда сохраняем сетку
@@ -2604,7 +2604,7 @@ int main(void)
     return 0;*/
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 800000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 4 * 800000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
