@@ -82,3 +82,5 @@ Hesperus-inner-wind-CT-cooling/.vs/Hesperus-inner-wind-CT-cooling/v17/.suo
 param_for_texplot_1d_r_eqv.txt
 
 src (Inner wind CT \+ Cooling)/save_Q3_1_0.bin
+
+src (Inner wind CT \+ Cooling)/save_Q3_refirement_1_0.bin

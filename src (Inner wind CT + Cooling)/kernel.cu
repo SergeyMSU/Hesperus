@@ -12,15 +12,16 @@
 #include "cooling_device.cuh"
 
 #define Omega 0.0
-#define N 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.0125) // (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.025) // (1.0125) // (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
-#define BX 16   // Размеры блока потоков 
+#define NQ (M / 4)          // M должно делиться на 4
+#define BX 16   // Размеры блока потоков  
 #define BY 16   // Размеры блока потоков 
 #define HALO 2
 #define SHARED_I (BX + 2*HALO)   // = 20
@@ -30,6 +31,11 @@
 // Определим версию   1 - HSE (сильное охлаждение, большая плотность),  2 - Nuclon
 #ifndef VERSION
 #define VERSION 1 
+#endif
+
+// Определим сетку по углу для диполя 3 или квадруполя 4
+#ifndef setka_q
+#define setka_q 4
 #endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
@@ -91,7 +97,10 @@
 //// Внешняя дуга (при r = R_EDGE(i+1))
 //#define L_OUTER(i) (R_EDGE(i + 1) * dphi)
 
-// ----------------- Угловое разбиение неравномерное ----------------------------------------
+
+#if setka_q == 3
+
+// ----------------- Угловое разбиение неравномерное для диполя ----------------------------------------
 
 // Минимальный угловой шаг (у phi = 0)
 #define DPHI_MIN ((pi / 2.0) * (qphi - 1.0) / (pow(qphi, M_HALF) - 1.0))
@@ -118,6 +127,44 @@
 
 // Внешняя дуга (при r = R_EDGE(i+1))
 #define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
+
+#elif setka_q == 4
+
+// Минимальный угловой шаг (у ? = ±?/4)
+#define DPHI_MIN ((pi / 4.0) * (qphi - 1.0) / (pow(qphi, NQ) - 1.0))
+
+// Угловая граница с индексом k (k = 0..M)
+#define PHI_EDGE(k) ((k) <= NQ ? \
+    (-(pi)/2.0 + DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, NQ - (k))) / (qphi - 1.0)) : \
+    ((k) <= 2*NQ ? \
+    (-(pi)/4.0 + DPHI_MIN * (pow(qphi, (k)-NQ) - 1.0)                  / (qphi - 1.0)) : \
+    ((k) <= 3*NQ ? \
+     (           DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, 3*NQ - (k))) / (qphi - 1.0)) : \
+     ( pi/4.0  + DPHI_MIN * (pow(qphi, (k)-3*NQ) - 1.0)                 / (qphi - 1.0)))))
+
+// Нижняя и верхняя границы j-й ячейки
+#define PHI_LEFT(j)  (PHI_EDGE(j))
+#define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+#define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
+
+// Ширина j-й угловой ячейки (j = 0..M-1)
+#define DPHI(j) ((j) < NQ ? \
+    (DPHI_MIN * pow(qphi, NQ - 1 - (j))) : \
+    ((j) < 2*NQ ? \
+        (DPHI_MIN * pow(qphi, (j) - NQ)) : \
+        ((j) < 3*NQ ? \
+            (DPHI_MIN * pow(qphi, 3*NQ - 1 - (j))) : \
+            (DPHI_MIN * pow(qphi, (j) - 3*NQ)))))
+
+// Внутренняя / внешняя дуга (без изменений — работают через DPHI(j))
+#define L_INNER(i,j) (R_EDGE(i)     * DPHI(j))
+#define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
+
+#else
+#error "Unsupported setka_q"
+#endif
+
+
 
 // ---------------------------------------------------------------------------------------------------------------------------
 
@@ -160,11 +207,12 @@
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
 
 // 7.10158    22.4519    70.9011   141.802
-#define Bo_init 0.0// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+// 2 * sqrt(4 * pi * eta)
+#define Bo_init 70.9011// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
-#define V_phi_init (0.0) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.176814) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -172,7 +220,7 @@
 #define snos_v_by_polar (true)   // = 1
 #define snos_b_by_polar (true)   // = 1
 #define snos_br_in_cell_by_r (true)   // = 1
-#define method_rieman (1)   // = 2
+#define method_rieman (2)   // = 2
 #define method_laks_r (1.05)   // = 1
 
 // Раскомментируйте, чтобы включить WENO-Z3
@@ -184,9 +232,18 @@
 #define INTERP linear
 #endif
 
+// Диполь
+// #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+// #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
-#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
-#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+// Квадруполь
+#define Bx_dipole(r,phi) ( 0.5 * Bo_init * cos(phi) \
+    * (4.0*sin(phi)*sin(phi) - cos(phi)*cos(phi)) \
+    / ((r)*(r)*(r)*(r)) )
+
+#define By_dipole(r,phi) ( 0.5 * Bo_init * sin(phi) \
+    * (5.0*sin(phi)*sin(phi) - 3.0) \
+    / ((r)*(r)*(r)*(r)) )
 
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
@@ -2383,6 +2440,7 @@ __global__ void update_cells(
 
 void test_polar_geometry(void)
 {
+    cout << "Start: test_polar_geometry" << endl;
     // Печатает именно границы всех ячеек
 
     ofstream fout;
@@ -2517,31 +2575,36 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
 
 int main(void)
 {
+    cout << "Start: main" << endl;
     // "save_zOph_1(350x256).bin" - чисто газодинамическое решение без вращения
     // "save_zOph_2(350x256).bin" - МГД решение (B0 = 0.45542) без вращения
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
 
 
 #if VERSION == 1
-    string name1 = "save_Q3_refirement_1_0.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q4_1_2.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q3_refirement_1_0.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q4_1_3.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
-    string name2 = "save_Q3_6_3-.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_6_3.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; //  0.0020847; // 0.533803;
 #else
 #error "Unsupported VERSION"
 #endif
 
+    /*cout << "next test_polar_geometry" << endl;
+    test_polar_geometry();
+    return 0;*/
+
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 150000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 800000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
@@ -3129,7 +3192,7 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 100.0) break;
+        if (host_all_T * time_razmer > 300.0) break;
         //if (host_all_T * time_razmer > 125.0) break;
     }
 
