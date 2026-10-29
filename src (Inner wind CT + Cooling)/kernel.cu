@@ -35,7 +35,7 @@
 
 // Определим сетку по углу для диполя 3 или квадруполя 4
 #ifndef setka_q
-#define setka_q 4
+#define setka_q 3
 #endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
@@ -208,7 +208,7 @@
 
 // 7.10158    22.4519    70.9011   141.802
 // 2 * sqrt(4 * pi * eta)
-#define Bo_init (2.0 * sqrt(4.0 * pi * 5.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init (2.0 * sqrt(4.0 * pi * 36.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
@@ -2586,14 +2586,10 @@ int main(void)
 
 
 #if VERSION == 1
-<<<<<<< Updated upstream
-    string name1 = "save_Q4_1_3.bin";   // Откуда скачиваем сетку
-=======
-    string name1 = "save_Q4_1_1.bin";   // Откуда скачиваем сетку
->>>>>>> Stashed changes
+    string name1 = "save_Q3_1_2.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q4_1_5.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_1_5.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
@@ -2608,11 +2604,8 @@ int main(void)
     return 0;*/
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-<<<<<<< Updated upstream
-    int all_step = 4 * 800000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
-=======
-    int all_step = 100000 * 5; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
->>>>>>> Stashed changes
+    int all_step = 300000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
@@ -2788,6 +2781,19 @@ int main(void)
         }
 
         fin.close();
+
+        std::ifstream fin_extra("time_" + name1, std::ios::binary);
+        if (fin_extra.is_open())
+        {
+            fin_extra.read(reinterpret_cast<char*>(&host_all_T), sizeof(double));
+            if (fin_extra.fail())
+            {
+                // файл есть, но прочитать не удалось — оставляем 0
+                host_all_T = 0.0;
+                std::cerr << "Warning: failed to read, host_all_T = 0" << std::endl;
+            }
+            fin_extra.close();
+        }
     }
 
     if (read_setka_Bn)
@@ -3321,6 +3327,11 @@ int main(void)
             bfout.write((char*)&h_cell_phi_average.Bz[k], sizeof(double));
         }
         bfout.close();
+
+
+        std::ofstream fout_extra("time_" + name2, std::ios::binary);
+        fout_extra.write(reinterpret_cast<const char*>(&host_all_T), sizeof(double));
+        fout_extra.close();
     }
 
     Print_results_2D(-1, 0.0, h_cell);
