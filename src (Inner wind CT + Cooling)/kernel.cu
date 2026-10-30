@@ -13,7 +13,7 @@
 
 #define Omega 0.0
 #define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+#define M 448 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
 #define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
@@ -35,7 +35,7 @@
 
 // Определим сетку по углу для диполя 3 или квадруполя 4
 #ifndef setka_q
-#define setka_q 3
+#define setka_q 4
 #endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
@@ -212,7 +212,7 @@
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
-#define V_phi_init (0.176814) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init 0.0// (0.176814) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -2586,10 +2586,10 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q3_1_1.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q4_2_2.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q3_1_5.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q4_2_3.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
@@ -2604,7 +2604,7 @@ int main(void)
     return 0;*/
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 2000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 3000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
 
     double period_print = 0.015; // С каким периодом выводим в часах
     double time_razmer = 5.2747;
@@ -3202,7 +3202,56 @@ int main(void)
                 out_rashod << host_all_T * time_razmer << " " << MM * Mass_rashod_razmer << " " << MMv2 << " " << MM2 << " " << MM3 <<
                     " " << Jgas << " " << Jmag << " " << Jgas + Jmag << endl;
             }
+        }
 
+        // Сохраняем результат в .bin
+        if (save_setka && step_ % 100000 == 0 && step_ > 10)
+        {
+            // Копируем обратно на хост
+            if (true)
+            {
+                copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+                copyFromDevice(h_cell.p, d_cell.p, cellCount);
+                copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
+                copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
+                copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
+                copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
+                copyFromDevice(h_cell.By, d_cell.By, cellCount);
+                copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
+
+                copyFromDevice(h_hFace.Bn, d_hFace.Bn, hFaceCount);
+                copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
+            }
+
+            ofstream bfout;
+            bfout.open(name2, ios::binary);
+            for (int k = 0; k < K; k++)
+            {
+                bfout.write((char*)&h_cell.rho[k], sizeof(double));
+                bfout.write((char*)&h_cell.p[k], sizeof(double));
+                bfout.write((char*)&h_cell.Vx[k], sizeof(double));
+                bfout.write((char*)&h_cell.Vy[k], sizeof(double));
+                bfout.write((char*)&h_cell.Vz[k], sizeof(double));
+                bfout.write((char*)&h_cell.Bx[k], sizeof(double));
+                bfout.write((char*)&h_cell.By[k], sizeof(double));
+                bfout.write((char*)&h_cell.Bz[k], sizeof(double));
+            }
+            bfout.close();
+
+            bfout.open("Bn_gran_" + name2, ios::binary);
+            for (int k = 0; k < hFaceCount; k++)
+            {
+                bfout.write((char*)&h_hFace.Bn[k], sizeof(double));
+            }
+            for (int k = 0; k < vFaceCount; k++)
+            {
+                bfout.write((char*)&h_vFace.Bn[k], sizeof(double));
+            }
+            bfout.close();
+
+            std::ofstream fout_extra("time_" + name2, std::ios::binary);
+            fout_extra.write(reinterpret_cast<const char*>(&host_all_T), sizeof(double));
+            fout_extra.close();
         }
 
 
