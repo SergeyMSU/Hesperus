@@ -84,3 +84,9 @@ param_for_texplot_1d_r_eqv.txt
 src (Inner wind CT \+ Cooling)/save_Q3_1_0.bin
 
 src (Inner wind CT \+ Cooling)/save_Q3_refirement_1_0.bin
+
+src (Inner wind CT \+ Cooling)/save_Q4_1_0.bin
+
+src (Inner wind CT \+ Cooling)/save_Q4_1_1.bin
+
+src (Inner wind CT \+ Cooling)/Bn_gran_save_Q4_1_1.bin

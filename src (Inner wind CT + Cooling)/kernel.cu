@@ -13,7 +13,8 @@
 
 #define Omega 0.0
 #define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 //  оличество €чеек по x
-#define M 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 //  оличество €чеек по y  - должно делитьс€ на 4 дл€ квадрупол€ и на 2 дл€ дипол€
+#define M 448 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 //  оличество €чеек по y  - должно делитьс€ на 4 дл€ квадрупол€ и на 2 дл€ дипол€
+//  вадрупол€рна€ сетка работает только дл€ 256
 #define K (N*M)                //  оличество €чеек в сетке
 #define Rb (15.0)  // (6.0)             // ¬нешний радиус сетки
 #define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // —гущение сетки кажда€ следующа€ ширина на (qb - 1)% больше предыдущей
@@ -27,7 +28,6 @@
 #define SHARED_I (BX + 2*HALO)   // = 20
 #define SHARED_J (BY + 2*HALO)   // = 20
 
-
 // ќпределим версию   1 - HSE (сильное охлаждение, больша€ плотность),  2 - Nuclon (слабое охлождение)
 #ifndef VERSION
 #define VERSION 1 
@@ -35,7 +35,7 @@
 
 // ќпределим сетку по углу дл€ дипол€ 3 или квадрупол€ 4
 #ifndef setka_q
-#define setka_q 3
+#define setka_q 4
 #endif
 
 // —ледующие определени€ дл€ €дра  compute_cell_ez_and_slopes
@@ -99,9 +99,7 @@
 
 
 #if setka_q == 3
-
 // ----------------- ”гловое разбиение неравномерное дл€ дипол€ ----------------------------------------
-
 // ћинимальный угловой шаг (у phi = 0)
 #define DPHI_MIN ((pi / 2.0) * (qphi - 1.0) / (pow(qphi, M_HALF) - 1.0))
 
@@ -129,36 +127,82 @@
 #define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
 
 #elif setka_q == 4
+// ----------------- ”гловое разбиение неравномерное дл€ квадрупол€
+// PHI_M = atan(1/sqrt(2)) Ч точка смены пол€рности квадрупол€
+#define PHI_M 0.615479708670387
+//#define NQ_OUT 71
+//#define NQ_IN  57
+#define NQ_OUT 120
+#define NQ_IN  104
+//#define QPHI_IN   (1.025)
+//#define QPHI_OUT  (1.02508)         // подобрано так, чтобы DPHI_MIN_OUT == DPHI_MIN_IN
+#define QPHI_IN   (1.025)
+#define QPHI_OUT  (1.0252133) 
+#define DPHI_MIN_IN  (PHI_M            * (QPHI_IN  - 1.0) / (pow(QPHI_IN,  NQ_IN)  - 1.0))
+#define DPHI_MIN_OUT ((pi/2.0 - PHI_M) * (QPHI_OUT - 1.0) / (pow(QPHI_OUT, NQ_OUT) - 1.0))
 
-// ћинимальный угловой шаг (у ? = ±?/4)
-#define DPHI_MIN ((pi / 4.0) * (qphi - 1.0) / (pow(qphi, NQ) - 1.0))
+// ---- ”глова€ граница PHI_EDGE(k), k = 0..M ----
+// —егмент 1: [-pi/2,   -PHI_M]  OUT  (NQ_OUT €чеек)
+// —егмент 2: [-PHI_M,    0   ]  IN   (NQ_IN  €чеек)
+// —егмент 3: [  0,    +PHI_M ]  IN   (NQ_IN  €чеек)
+// —егмент 4: [+PHI_M, +pi/2 ]  OUT  (NQ_OUT €чеек)
+#define PHI_EDGE(k) ((k) <= NQ_OUT ? \
+    (-(pi)/2.0 + DPHI_MIN_OUT * (pow(QPHI_OUT, NQ_OUT) - pow(QPHI_OUT, NQ_OUT - (k)))             / (QPHI_OUT - 1.0)) : \
+    ((k) <= NQ_OUT + NQ_IN ? \
+    (-PHI_M    + DPHI_MIN_IN  * (pow(QPHI_IN,  (k) - NQ_OUT) - 1.0)                              / (QPHI_IN  - 1.0)) : \
+    ((k) <= NQ_OUT + 2*NQ_IN ? \
+     (           DPHI_MIN_IN  * (pow(QPHI_IN,  NQ_IN) - pow(QPHI_IN, NQ_OUT + 2*NQ_IN - (k)))      / (QPHI_IN  - 1.0)) : \
+     (PHI_M    + DPHI_MIN_OUT * (pow(QPHI_OUT, (k) - NQ_OUT - 2*NQ_IN) - 1.0)                    / (QPHI_OUT - 1.0)))))
 
-// ”глова€ граница с индексом k (k = 0..M)
-#define PHI_EDGE(k) ((k) <= NQ ? \
-    (-(pi)/2.0 + DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, NQ - (k))) / (qphi - 1.0)) : \
-    ((k) <= 2*NQ ? \
-    (-(pi)/4.0 + DPHI_MIN * (pow(qphi, (k)-NQ) - 1.0)                  / (qphi - 1.0)) : \
-    ((k) <= 3*NQ ? \
-     (           DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, 3*NQ - (k))) / (qphi - 1.0)) : \
-     ( pi/4.0  + DPHI_MIN * (pow(qphi, (k)-3*NQ) - 1.0)                 / (qphi - 1.0)))))
-
-// Ќижн€€ и верхн€€ границы j-й €чейки
-#define PHI_LEFT(j)  (PHI_EDGE(j))
-#define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+#define PHI_LEFT(j)   (PHI_EDGE(j))
+#define PHI_RIGHT(j)  (PHI_EDGE((j) + 1))
 #define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
 
-// Ўирина j-й угловой €чейки (j = 0..M-1)
-#define DPHI(j) ((j) < NQ ? \
-    (DPHI_MIN * pow(qphi, NQ - 1 - (j))) : \
-    ((j) < 2*NQ ? \
-        (DPHI_MIN * pow(qphi, (j) - NQ)) : \
-        ((j) < 3*NQ ? \
-            (DPHI_MIN * pow(qphi, 3*NQ - 1 - (j))) : \
-            (DPHI_MIN * pow(qphi, (j) - 3*NQ)))))
+// ---- Ўирина j-й угловой €чейки, j = 0..M-1 ----
+#define DPHI(j) ((j) < NQ_OUT ? \
+    (DPHI_MIN_OUT * pow(QPHI_OUT, NQ_OUT - 1 - (j))) : \
+    ((j) < NQ_OUT + NQ_IN ? \
+        (DPHI_MIN_IN  * pow(QPHI_IN,  (j) - NQ_OUT)) : \
+        ((j) < NQ_OUT + 2*NQ_IN ? \
+            (DPHI_MIN_IN  * pow(QPHI_IN,  NQ_OUT + 2*NQ_IN - 1 - (j))) : \
+            (DPHI_MIN_OUT * pow(QPHI_OUT, (j) - NQ_OUT - 2*NQ_IN)))))
 
-// ¬нутренн€€ / внешн€€ дуга (без изменений Ч работают через DPHI(j))
+// ---- ¬нутренн€€ / внешн€€ дуга ----
 #define L_INNER(i,j) (R_EDGE(i)     * DPHI(j))
 #define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
+
+
+// ----------------- ”гловое разбиение неравномерное дл€ квадрупол€  +- 45 градусов  ----------------------------------------
+// 
+// ћинимальный угловой шаг (у ? = ±?/4)
+//#define DPHI_MIN ((pi / 4.0) * (qphi - 1.0) / (pow(qphi, NQ) - 1.0))
+//
+//// ”глова€ граница с индексом k (k = 0..M)
+//#define PHI_EDGE(k) ((k) <= NQ ? \
+//    (-(pi)/2.0 + DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, NQ - (k))) / (qphi - 1.0)) : \
+//    ((k) <= 2*NQ ? \
+//    (-(pi)/4.0 + DPHI_MIN * (pow(qphi, (k)-NQ) - 1.0)                  / (qphi - 1.0)) : \
+//    ((k) <= 3*NQ ? \
+//     (           DPHI_MIN * (pow(qphi, NQ)     - pow(qphi, 3*NQ - (k))) / (qphi - 1.0)) : \
+//     ( pi/4.0  + DPHI_MIN * (pow(qphi, (k)-3*NQ) - 1.0)                 / (qphi - 1.0)))))
+//
+//// Ќижн€€ и верхн€€ границы j-й €чейки
+//#define PHI_LEFT(j)  (PHI_EDGE(j))
+//#define PHI_RIGHT(j) (PHI_EDGE((j) + 1))
+//#define PHI_CENTER(j) (0.5 * (PHI_LEFT(j) + PHI_RIGHT(j)))
+//
+//// Ўирина j-й угловой €чейки (j = 0..M-1)
+//#define DPHI(j) ((j) < NQ ? \
+//    (DPHI_MIN * pow(qphi, NQ - 1 - (j))) : \
+//    ((j) < 2*NQ ? \
+//        (DPHI_MIN * pow(qphi, (j) - NQ)) : \
+//        ((j) < 3*NQ ? \
+//            (DPHI_MIN * pow(qphi, 3*NQ - 1 - (j))) : \
+//            (DPHI_MIN * pow(qphi, (j) - 3*NQ)))))
+//
+//// ¬нутренн€€ / внешн€€ дуга (без изменений Ч работают через DPHI(j))
+//#define L_INNER(i,j) (R_EDGE(i)     * DPHI(j))
+//#define L_OUTER(i,j) (R_EDGE(i + 1) * DPHI(j))
 
 #else
 #error "Unsupported setka_q"
@@ -2597,10 +2641,10 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q3_1_3.bin";   // ќткуда скачиваем сетку
+    string name1 = "save_Q4_1_1.bin";   // ќткуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // ќткуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   //  уда сохран€ем сетку
-    string name2 = "save_Q3_1_6.bin";   //  уда сохран€ем сетку
+    string name2 = "save_Q4_1_10.bin";   //  уда сохран€ем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // ќткуда скачиваем сетку
@@ -2619,7 +2663,7 @@ int main(void)
 
 
     bool save_setka = true;                      // Ќадо ли сохран€ть сетку?
-    int all_step = 12000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // „исло шагов
+    int all_step = 9000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // „исло шагов
 
     double period_print = 0.015; // — каким периодом выводим в часах дл€ расхода массы
     double period_print2 = 20.0; // 4.0  — каким периодом выводим в часах дл€ 2д карт
@@ -2912,10 +2956,10 @@ int main(void)
             double vphi = V_phi_init * sin(the);
             double rho = rho_in / kv(dist);
 
-            h_cell.rho[k] = rho;
+            /*h_cell.rho[k] = rho;
             h_cell.p[k] = rho * const_p;
             h_cell.Vx[k] = vr * x / dist;
-            h_cell.Vy[k] = vr * y / dist;
+            h_cell.Vy[k] = vr * y / dist;*/
             h_cell.Vz[k] = 0.0;
 
             //h_cell.rho[k] = 1.0;
