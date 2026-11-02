@@ -13,7 +13,7 @@
 
 #define Omega 0.0
 #define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 448 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+#define M 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
 #define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
@@ -28,14 +28,14 @@
 #define SHARED_J (BY + 2*HALO)   // = 20
 
 
-// Определим версию   1 - HSE (сильное охлаждение, большая плотность),  2 - Nuclon
+// Определим версию   1 - HSE (сильное охлаждение, большая плотность),  2 - Nuclon (слабое охлождение)
 #ifndef VERSION
 #define VERSION 1 
 #endif
 
 // Определим сетку по углу для диполя 3 или квадруполя 4
 #ifndef setka_q
-#define setka_q 4
+#define setka_q 3
 #endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
@@ -208,11 +208,12 @@
 
 // 7.10158    22.4519    70.9011   141.802
 // 2 * sqrt(4 * pi * eta)
-#define Bo_init (2.0 * sqrt(4.0 * pi * 36.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init (2.0 * sqrt(4.0 * pi * 225.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
-#define V_phi_init 0.0// (0.176814) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+// W/sqrt(2.0)
+#define V_phi_init (0.25/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -232,10 +233,12 @@
 #define INTERP linear
 #endif
 
-// Диполь
-// #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
-// #define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
 
+#if setka_q == 3
+// Диполь
+#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
+#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
+#elif setka_q == 4
 // Квадруполь
 #define Bx_dipole(r,phi) ( 0.5 * Bo_init * cos(phi) \
     * (4.0*sin(phi)*sin(phi) - cos(phi)*cos(phi)) \
@@ -244,7 +247,9 @@
 #define By_dipole(r,phi) ( 0.5 * Bo_init * sin(phi) \
     * (5.0*sin(phi)*sin(phi) - 3.0) \
     / ((r)*(r)*(r)*(r)) )
-
+#else
+#error "Unsupported setka_q B"
+#endif
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
 
@@ -2576,6 +2581,12 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
 int main(void)
 {
     cout << "Start: main" << endl;
+    cout << "N, M = " << N << " " << M << endl;
+    cout << "VERSION = " << VERSION << endl;
+    cout << "setka_q = " << setka_q << endl;
+    cout << "eta = " << kv(Bo_init / 2.0) / (4.0 * pi) << endl;
+    cout << "W = " << V_phi_init * sqrt(2.0) << endl;
+    cout << "method_rieman = " << method_rieman << endl;
     // "save_zOph_1(350x256).bin" - чисто газодинамическое решение без вращения
     // "save_zOph_2(350x256).bin" - МГД решение (B0 = 0.45542) без вращения
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
@@ -2586,14 +2597,14 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q4_2_2.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q3_1_3.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q4_2_3.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_1_6.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
-    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
-    string name2 = "save_Q3_6_3.bin";   // Куда сохраняем сетку
+    string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
+    string name2 = "save_Q3_4_2+.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; //  0.0020847; // 0.533803;
 #else
 #error "Unsupported VERSION"
@@ -2603,10 +2614,15 @@ int main(void)
     test_polar_geometry();
     return 0;*/
 
-    bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 3000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    cout << "name1 = " << name1 << endl;
+    cout << "name2 = " << name2 << endl << endl << endl;
 
-    double period_print = 0.015; // С каким периодом выводим в часах
+
+    bool save_setka = true;                      // Надо ли сохранять сетку?
+    int all_step = 12000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+
+    double period_print = 0.015; // С каким периодом выводим в часах для расхода массы
+    double period_print2 = 20.0; // 4.0  С каким периодом выводим в часах для 2д карт
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
 
@@ -2782,7 +2798,7 @@ int main(void)
 
         fin.close();
 
-        std::ifstream fin_extra("time_" + name1, std::ios::binary);
+        std::ifstream fin_extra("time_" + name2, std::ios::binary);
         if (fin_extra.is_open())
         {
             fin_extra.read(reinterpret_cast<char*>(&host_all_T), sizeof(double));
@@ -2998,6 +3014,13 @@ int main(void)
     dim3 block(BX, BY);
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
     int num_ = 0;
+    int num2_ = 0;
+
+    num_ = (int)(host_all_T * time_razmer / period_print);
+    if (num_ < 0) num_ = 0;
+
+    num2_ = (int)(host_all_T * time_razmer / period_print2);
+    if (num2_ < 0) num2_ = 0;
 
     std::ofstream out_rashod("rashod_" + name2, std::ios::app);
     //std::ofstream out_rashod("rashod_" + name2, std::ios::app);
@@ -3133,7 +3156,8 @@ int main(void)
                 h_cell_phi_average.Bz[j] += h_cell.Bz[idx_cell(i, j)];
             }
 
-            if (period_print > 0.499)
+            if (false)
+            //if (period_print > 0.499)
             {
                 // Если период маленький, то не надо слишком часто печатать 
                 Print_results_2D(num_, host_all_T * time_razmer, h_cell);
@@ -3202,6 +3226,30 @@ int main(void)
                 out_rashod << host_all_T * time_razmer << " " << MM * Mass_rashod_razmer << " " << MMv2 << " " << MM2 << " " << MM3 <<
                     " " << Jgas << " " << Jmag << " " << Jgas + Jmag << endl;
             }
+        }
+
+
+        // Печатаем 2Д файл
+        if (host_all_T * time_razmer > period_print2 * num2_)
+        {
+            // Копируем обратно на хост
+            if (true)
+            {
+                copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+                copyFromDevice(h_cell.p, d_cell.p, cellCount);
+                copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
+                copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
+                copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
+                copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
+                copyFromDevice(h_cell.By, d_cell.By, cellCount);
+                copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
+
+                copyFromDevice(h_hFace.Bn, d_hFace.Bn, hFaceCount);
+                copyFromDevice(h_vFace.Bn, d_vFace.Bn, vFaceCount);
+            }
+
+            Print_results_2D(num2_, host_all_T* time_razmer, h_cell);
+            num2_++;
         }
 
         // Сохраняем результат в .bin
