@@ -38,6 +38,18 @@
 #define setka_q 4
 #endif
 
+#if setka_q == 3
+#if M != 256
+#error "For setka_q == 3, M must be 256"
+#endif
+#elif setka_q == 4
+#if M != 448
+#error "For setka_q == 4, M must be 448"
+#endif
+#else
+#error "Unsupported M for setka_q"
+#endif
+
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
 #define SLOPE_BY BY
@@ -252,7 +264,7 @@
 
 // 7.10158    22.4519    70.9011   141.802
 // 2 * sqrt(4 * pi * eta)
-#define Bo_init (2.0 * sqrt(4.0 * pi * 36.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init (2.0 * sqrt(4.0 * pi * 100.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
@@ -266,7 +278,7 @@
 #define snos_b_by_polar (true)   // = 1
 #define snos_br_in_cell_by_r (true)   // = 1
 #define method_rieman (2)   // = 2
-#define method_laks_r (1.05)   // = 1
+#define method_laks_r (1.08)   // = 1     1.05
 
 // Раскомментируйте, чтобы включить WENO-Z3
 //#define USE_WENO_Z3
@@ -2653,10 +2665,10 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q4_1_11.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q4_1_3.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q4_1_11.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q4_1_3.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -2675,7 +2687,7 @@ int main(void)
 
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 2000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 3000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
 
     double period_print = 0.015; // С каким периодом выводим в часах для расхода массы
     double period_print2 = 20.0; // 4.0  С каким периодом выводим в часах для 2д карт
