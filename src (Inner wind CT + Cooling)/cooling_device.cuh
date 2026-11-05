@@ -62,6 +62,11 @@ double apply_cooling(double T_n, double dt, double rho,
     const CoolingTablesDevice& tab,
     double T_floor = 1.0e4)
 {
+    // Не трогаем уже холодный газ — иначе Y_of_T экстраполирует
+    // за пределы таблицы и T_of_Y вернёт floor (нагрев).
+    if (T_n <= T_floor) return T_n;
+    if (dt <= 0.0)      return T_n;   // защита от 0/отрицательного dt
+
     constexpr double kB = 1.380649e-16;   // erg/K
     constexpr double m_p = 1.67262192e-24; // g
 

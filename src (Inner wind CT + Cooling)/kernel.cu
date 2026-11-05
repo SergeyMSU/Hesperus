@@ -13,7 +13,7 @@
 
 #define Omega 0.0
 #define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 448 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+#define M 256 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
 // Квадруполярная сетка работает только для 256
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
@@ -35,7 +35,7 @@
 
 // Определим сетку по углу для диполя 3 или квадруполя 4
 #ifndef setka_q
-#define setka_q 4
+#define setka_q 3
 #endif
 
 #if setka_q == 3
@@ -264,7 +264,7 @@
 
 // 7.10158    22.4519    70.9011   141.802
 // 2 * sqrt(4 * pi * eta)
-#define Bo_init (2.0 * sqrt(4.0 * pi * 64.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init (2.0 * sqrt(4.0 * pi * 25.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
@@ -281,7 +281,7 @@
 #define method_laks_r (1.08)   // = 1     1.05
 
 // Раскомментируйте, чтобы включить WENO-Z3
-#define USE_WENO_Z3
+// #define USE_WENO_Z3
 
 #ifdef USE_WENO_Z3
 #define INTERP weno_z3_or_linear
@@ -2646,6 +2646,279 @@ void Print_results_2D(int num, const double& time, CellVars& h_cell)
 
 }
 
+// ============================================================
+//  Тест EI-схемы apply_cooling.
+//
+//  Проверяет:
+//    [1] Полугруппа: apply(dt/2) ? apply(dt/2) == apply(dt)
+//    [2] Малый dt: совпадение с явной линейной формулой
+//    [3] Эталон RK4: интегрирование того же ОДУ dT/dt = -C·?(T)
+//    [4] Монотонность по dt, отсутствие выхода ниже floor
+//    [5] Огромный dt ? T_new == T_floor
+//    [6] T_n < T_floor: газ не должен нагреваться
+//    [7] Конечность результата на всём диапазоне
+//
+//  Возвращает true при успехе. Печатает сводку, если verbose.
+// ============================================================
+bool test_apply_cooling(const CoolingTablesHost& host, bool verbose = true)
+{
+    const double kB = 1.380649e-16;     // erg/K
+    const double mp = 1.67262192e-24;   // g
+
+    // Параметры — как в пользовательском коде
+    const double gamma = 5.0 / 3.0;
+    const double mu = 0.62;
+    const double mu_e = 1.17;
+    const double mu_H = 1.4;
+    const double T_floor = 1.0e4;
+    const double rho = 1.0e-15;        // g/cm^3 (как в бенчмарке статьи)
+
+    // ---- host-зеркало device-функций ----
+
+    auto Lambda_of_T = [&](double T) -> double {
+        double lT = std::log10(T);
+        double t = (lT - host.logT_min) / host.dlogT;
+        int    i = std::min(std::max((int)t, 0), host.n - 2);
+        double w = t - i;
+        return std::pow(10.0,
+            host.logLambda[i] * (1.0 - w) + host.logLambda[i + 1] * w);
+        };
+
+    auto Y_of_T = [&](double T) -> double {
+        double lT = std::log10(T);
+        double t = (lT - host.logT_min) / host.dlogT;
+        int    i = std::min(std::max((int)t, 0), host.n - 2);
+        double w = t - i;
+        return host.Y_of_T[i] * (1.0 - w) + host.Y_of_T[i + 1] * w;
+        };
+
+    auto T_of_Y = [&](double Y) -> double {
+        int lo = 0, hi = host.n - 1;
+        if (Y >= host.Y_of_T[0])
+            return std::pow(10.0, host.logT_min);
+        if (Y <= host.Y_of_T[hi])
+            return std::pow(10.0, host.logT_min + hi * host.dlogT);
+        while (hi - lo > 1) {
+            int mid = (lo + hi) >> 1;
+            if (host.Y_of_T[mid] > Y) lo = mid;
+            else                       hi = mid;
+        }
+        double Y0 = host.Y_of_T[lo], Y1 = host.Y_of_T[hi];
+        double w = (Y0 - Y) / (Y0 - Y1);
+        return std::pow(10.0, host.logT_min + (lo + w) * host.dlogT);
+        };
+
+    // Зеркало apply_cooling из device-кода.
+    // ВАЖНО: сохранено поведение без защиты `if (T_n <= T_floor) return T_n;`
+    // — так тест [6] покажет, нужна ли эта защита.
+    auto apply_cooling_h = [&](double T_n, double dt) -> double {
+        if (T_n <= T_floor) return T_n;
+        if (dt <= 0.0)      return T_n;
+        double C = (host.Lambda_ref / host.T_ref)
+            * (gamma - 1.0) * rho * mu
+            / (kB * mp * mu_e * mu_H);
+        double Y_n = Y_of_T(T_n);
+        double Y_star = Y_n + C * dt;
+        double T_new = T_of_Y(Y_star);
+        if (T_new < T_floor) T_new = T_floor;
+        return T_new;
+        };
+
+    auto dTdt = [&](double T) -> double {
+        double Lam = Lambda_of_T(T);
+        return -(gamma - 1.0) * rho * mu
+            / (kB * mp * mu_e * mu_H) * Lam;
+        };
+
+    auto t_cool_at = [&](double T) -> double {
+        return kB * mp * mu_e * mu_H * T
+            / ((gamma - 1.0) * rho * mu * Lambda_of_T(T));
+        };
+
+    // RK4 с большим числом подшагов — эталон для [3]
+    auto rk4_solve = [&](double T0, double dt_total, int n_sub) -> double {
+        double T = T0, h = dt_total / n_sub;
+        for (int k = 0; k < n_sub; ++k) {
+            double k1 = dTdt(T);
+            double k2 = dTdt(T + 0.5 * h * k1);
+            double k3 = dTdt(T + 0.5 * h * k2);
+            double k4 = dTdt(T + h * k3);
+            T += h / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+            if (T < T_floor) { T = T_floor; break; }
+        }
+        return T;
+        };
+
+    if (verbose) {
+        std::printf("\n[test_apply_cooling]\n");
+        std::printf("  gamma=%.4f  mu=%.2f  mu_e=%.2f  mu_H=%.2f\n",
+            gamma, mu, mu_e, mu_H);
+        std::printf("  rho=%.3e g/cm^3  T_floor=%.1e K\n\n", rho, T_floor);
+    }
+
+    bool all_ok = true;
+
+    // ---------- [1] Полугруппа ----------
+    {
+        double max_rel = 0.0;
+        for (double T0 : { 1.0e5, 1.0e6, 5.0e6, 2.0e7 }) {
+            double tc = t_cool_at(T0);
+            for (double fdt : { 0.01, 0.1, 0.5, 1.0 }) {
+                double dt = fdt * tc;
+                double T_half = apply_cooling_h(T0, dt * 0.5);
+                double T_2half = apply_cooling_h(T_half, dt * 0.5);
+                double T_full = apply_cooling_h(T0, dt);
+                if (T_2half <= T_floor * 1.001 || T_full <= T_floor * 1.001)
+                    continue;
+                double rel = std::fabs(T_2half - T_full) / T_full;
+                max_rel = std::max(max_rel, rel);
+            }
+        }
+        bool ok = (max_rel < 1e-10);
+        if (verbose) std::printf("  [1] semigroup:        max rel.err = %9.3e   %s\n",
+            max_rel, ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [2] Малый dt: сравнение с темпом EI на ячейке ----------
+    {
+        double C = (host.Lambda_ref / host.T_ref)
+            * (gamma - 1.0) * rho * mu
+            / (kB * mp * mu_e * mu_H);
+
+        auto rate_ei_at = [&](double T) -> double {
+            double lT = std::log10(T);
+            double t = (lT - host.logT_min) / host.dlogT;
+            int    i = std::min(std::max((int)t, 0), host.n - 2);
+            double s_i = (host.Y_of_T[i + 1] - host.Y_of_T[i]) / host.dlogT;
+            // dY_lin/dt = C  ?  dT/dt = T·ln10·C/s_i
+            return T * std::log(10.0) * C / s_i;
+            };
+
+        double max_rel = 0.0;
+        for (double T0 : { 1.0e5, 1.0e6, 1.0e7 }) {
+            double tc = t_cool_at(T0);
+            double dt = 1.0e-4 * tc;
+            double T_ei = apply_cooling_h(T0, dt);
+            double T_exp = T0 + rate_ei_at(T0) * dt;
+            double rel = std::fabs(T_ei - T_exp) / std::fabs(T_exp - T0);
+            max_rel = std::max(max_rel, rel);
+        }
+        bool ok = (max_rel < 1e-4);
+        if (verbose) std::printf("  [2] small-dt limit:   max rel.err = %9.3e   %s\n",
+            max_rel, ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [3] Эталон RK4 ----------
+    {
+        double max_rel = 0.0;
+        if (verbose) {
+            std::printf("\n  [3] vs RK4 reference:\n");
+            std::printf("       T0[K]      dt/tc       T_EI          T_RK4         rel\n");
+        }
+        for (double T0 : { 1.0e5, 1.0e6, 5.0e6, 2.0e7 }) {
+            double tc = t_cool_at(T0);
+            for (double fdt : { 0.01, 0.1, 0.5, 1.0, 3.0 }) {
+                double dt = fdt * tc;
+                double T_ei = apply_cooling_h(T0, dt);
+                double T_rk = rk4_solve(T0, dt, 20000);
+                if (T_ei <= T_floor * 1.001) continue;
+                double rel = std::fabs(T_ei - T_rk) / T_rk;
+                max_rel = std::max(max_rel, rel);
+                if (verbose) {
+                    std::printf("    %10.2e  %8.3f  %13.6e  %13.6e  %9.2e\n",
+                        T0, fdt, T_ei, T_rk, rel);
+                }
+            }
+        }
+        // Точность ограничена трапециями в Y-таблице (dlogT? ? 2.4e-5);
+        // для реалистичных ? реально получается ~1e-4..1e-3.
+        bool ok = (max_rel < 5e-3);
+        if (verbose) std::printf("       max rel.err = %9.3e   %s\n",
+            max_rel, ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [4] Монотонность и floor ----------
+    {
+        bool ok = true;
+        for (double T0 : { 1.0e6, 1.0e7 }) {
+            double tc = t_cool_at(T0);
+            double T_prev = T0 + 1.0;
+            for (double fdt : { 1e-6, 1e-3, 1e-2, 0.1, 0.5, 1.0, 3.0,
+                10.0, 100.0, 1e6 }) {
+                double T_new = apply_cooling_h(T0, fdt * tc);
+                if (T_new > T_prev + 1e-10 * T_prev) {
+                    ok = false;
+                    if (verbose)
+                        std::printf("  [4] monotonicity FAIL T0=%.1e dt=%.1e*tc: %.6e > %.6e\n",
+                            T0, fdt, T_new, T_prev);
+                }
+                if (T_new < T_floor - 1e-6) {
+                    ok = false;
+                    if (verbose)
+                        std::printf("  [4] below-floor FAIL T0=%.1e dt=%.1e*tc: %.6e\n",
+                            T0, fdt, T_new);
+                }
+                T_prev = T_new;
+            }
+        }
+        if (verbose) std::printf("  [4] monotone in dt:   %s\n", ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [5] Huge dt ? floor ----------
+    {
+        double T0 = 1.0e7;
+        double T_new = apply_cooling_h(T0, 1.0e10);
+        bool ok = (std::fabs(T_new - T_floor) < 1e-6 * T_floor);
+        if (verbose) std::printf("  [5] huge-dt clamp:    T = %.6e   %s\n",
+            T_new, ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [6] T_n < T_floor ----------
+    {
+        double T_cold = 5000.0;
+        double T_new = apply_cooling_h(T_cold, 1.0e5);
+        bool ok = (std::fabs(T_new - T_cold) < 1e-10 * T_cold);
+        if (verbose) {
+            std::printf("  [6] T_n < T_floor:    %.3e -> %.3e   %s\n",
+                T_cold, T_new, ok ? "OK" : "FAIL");
+            if (!ok) {
+                std::printf(" add in apply_cooling:\n");
+                std::printf("            if (T_n <= T_floor) return T_n;\n");
+            }
+        }
+        all_ok = all_ok && ok;
+    }
+
+    // ---------- [7] Конечность ----------
+    {
+        bool ok = true;
+        for (double T0 : { 1.0e4, 1.5e4, 1.0e6, 1.0e8, 1.0e9 }) {
+            for (double fdt : { 0.0, 1e-6, 0.1, 1.0, 10.0 }) {
+                double T_new = apply_cooling_h(T0, fdt * t_cool_at(T0));
+                if (!std::isfinite(T_new) || T_new <= 0.0) {
+                    ok = false;
+                    if (verbose)
+                        std::printf("  [7] non-finite: T0=%.1e fdt=%.1e ? %.6e\n",
+                            T0, fdt, T_new);
+                }
+            }
+        }
+        if (verbose) std::printf("  [7] finite everywhere: %s\n", ok ? "OK" : "FAIL");
+        all_ok = all_ok && ok;
+    }
+
+    if (verbose) {
+        std::printf("\n[test_apply_cooling] %s\n\n",
+            all_ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
+    }
+    return all_ok;
+}
+
 int main(void)
 {
     cout << "Start: main" << endl;
@@ -2660,15 +2933,15 @@ int main(void)
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
     bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
-    bool read_setka_Bn = true;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
+    bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
 
 
 #if VERSION == 1
-    string name1 = "save_Q4_3_2.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q4_3_5.bin";   // Куда сохраняем сетку
+    string name2 = "save_Q3_3_1.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -2730,8 +3003,18 @@ int main(void)
     CoolingTablesHost tab_host;
     load_cooling_tables(tab_host);   // директория с *.txt
 
+    // Тест EI-схемы на host (до копирования на device)
+    //bool cooling_ok = test_apply_cooling(tab_host, /*verbose=*/true);
+    //if (!cooling_ok) {
+    //    std::cerr << "[main] cooling scheme failed self-test, aborting\n";
+    //    return 1;
+    //}
+
     // 2) Копируем COOLING на device
     CoolingTablesDevice tab_dev = to_device(tab_host);
+
+
+   
 
 
     // Выделение памяти для всех массивов
