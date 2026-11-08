@@ -13,7 +13,7 @@
 
 #define Omega 0.0
 #define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 448 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+#define M 256 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
 // Квадруполярная сетка работает только для 256
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
@@ -35,7 +35,7 @@
 
 // Определим сетку по углу для диполя 3 или квадруполя 4
 #ifndef setka_q
-#define setka_q 4
+#define setka_q 3
 #endif
 
 #if setka_q == 3
@@ -249,6 +249,8 @@
 #error "Unsupported VERSION"
 #endif
 
+#define eps_c 1.0   // Множитель в функции охлаждения, как в статьях ud-Doula
+
 //#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
 
 #define F_grav (-0.5)           // Коэффициент перед силой гравитации (-0.5)
@@ -264,12 +266,20 @@
 
 // 7.10158    22.4519    70.9011   141.802
 // 2 * sqrt(4 * pi * eta)
-#define Bo_init (2.0 * sqrt(4.0 * pi * 2.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+
+//#define Bo_init (2.0 * sqrt(4.0 * pi * 2.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+
+// Для Ud-Doula (там eta другая - посчитанная по параметрам на бесконечности
+#define Bo_init (92.7411)
+// 29.335 - для eta = 10
+// 92.7411 - для eta = 100
+
+
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
 // W/sqrt(2.0)
-#define V_phi_init (0.5/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.0/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -2919,6 +2929,134 @@ bool test_apply_cooling(const CoolingTablesHost& host, bool verbose = true)
     return all_ok;
 }
 
+// ============================================================
+// 1) Read table from file into dynamically allocated arrays
+// ============================================================
+bool read_lambda_table(const std::string& fname,
+    int& n,        // out: number of rows
+    double*& T,       // out: T[K]      (allocated here)
+    double*& Lam)     // out: Lambda_m  (allocated here)
+{
+    std::ifstream fin(fname);
+    if (!fin) {
+        std::cerr << "[read_lambda_table] Cannot open: " << fname << "\n";
+        return false;
+    }
+
+    std::string header;
+    std::getline(fin, header);           // skip header line
+
+    std::vector<double> tvec, lvec;
+    double t, l;
+    while (fin >> t >> l) {
+        tvec.push_back(t);
+        lvec.push_back(l);
+    }
+
+    n = static_cast<int>(tvec.size());
+    if (n == 0) {
+        std::cerr << "[read_lambda_table] No data in " << fname << "\n";
+        return false;
+    }
+
+    T = new double[n];
+    Lam = new double[n];
+    for (int i = 0; i < n; ++i) {
+        T[i] = tvec[i];
+        Lam[i] = lvec[i];
+    }
+    return true;
+}
+
+// ============================================================
+// 2) Interpolate Lambda_m(T) at given Tin [K]
+//    log-log interpolation; clamped at both ends
+// ============================================================
+double lambda_of_T(int n, const double* T, const double* Lam, double Tin)
+{
+    // clamp outside the tabulated range
+    if (Tin <= T[0])   return Lam[0];
+    if (Tin >= T[n - 1]) return Lam[n - 1];
+
+    // binary search: find lo with T[lo] <= Tin < T[lo+1]
+    int lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        int mid = (lo + hi) / 2;
+        if (T[mid] <= Tin) lo = mid;
+        else                hi = mid;
+    }
+
+    const double x0 = std::log10(T[lo]), x1 = std::log10(T[hi]);
+    const double x = std::log10(Tin);
+
+    // fallback: if one endpoint is non-positive, do lin-log
+    if (Lam[lo] <= 0.0 || Lam[hi] <= 0.0) {
+        return Lam[lo] + (Lam[hi] - Lam[lo]) * (x - x0) / (x1 - x0);
+    }
+
+    // log-log interpolation
+    const double y0 = std::log10(Lam[lo]), y1 = std::log10(Lam[hi]);
+    const double y = y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    return std::pow(10.0, y);
+}
+
+// ============================================================
+// 3) Test function: checks the interpolator
+// ============================================================
+void test_lambda_table(int n, const double* T, const double* Lam)
+{
+    std::cout << "\n================ test_lambda_table ================\n";
+    std::cout << "n = " << n
+        << "   T = " << T[0]
+        << " .. " << T[n - 1] << " K\n\n";
+
+    // --- (a) nodes: interpolation must recover the tabulated values
+    std::cout << "--- (a) recover tabulated nodes (every 10th) ---\n";
+    double max_rel = 0.0;
+    for (int i = 0; i < n; i += 10) {
+        double L = lambda_of_T(n, T, Lam, T[i]);
+        double rel = std::fabs(L - Lam[i]) / Lam[i];
+        if (rel > max_rel) max_rel = rel;
+        std::cout << "  T=" << T[i]
+            << "   Lam_tab=" << Lam[i]
+            << "   Lam_interp=" << L
+            << "   rel=" << rel << "\n";
+    }
+    std::cout << "  max rel_err (nodes) = " << max_rel << "\n\n";
+
+    // --- (b) mid points (geometric mean), log-log interpolation check
+    std::cout << "--- (b) mid points (sqrt(T_i T_{i+1})) ---\n";
+    for (int i = 0; i < n - 1; i += 10) {
+        double Tm = std::sqrt(T[i] * T[i + 1]);
+        double Lm = lambda_of_T(n, T, Lam, Tm);
+        // reference: geometric mean of endpoints (exact for log-log interp)
+        double Lref = std::sqrt(Lam[i] * Lam[i + 1]);
+        std::cout << "  T=" << Tm
+            << "   Lam_interp=" << Lm
+            << "   log-log ref=" << Lref
+            << "   diff=" << (Lm - Lref) / Lref << "\n";
+    }
+    std::cout << "\n";
+
+    // --- (c) physical sanity check
+    std::cout << "--- (c) physical sanity at typical MCWS temperatures ---\n";
+    const double T_test[] = { 1.0e6, 3.16e6, 1.0e7, 3.16e7 };
+    const double T_ref[] = { 8.0e23, 4.9e24, 6.97e24, 3.66e24 }; // ~ expected Lambda_m
+    for (int k = 0; k < 4; ++k) {
+        double L = lambda_of_T(n, T, Lam, T_test[k]);
+        std::cout << "  T=" << T_test[k]
+            << "   Lam_m=" << L
+            << "   (expected ~" << T_ref[k] << ")\n";
+    }
+    std::cout << "\n";
+
+    // --- (d) clamping outside the range
+    std::cout << "--- (d) clamping ---\n";
+    std::cout << "  T=1e4  (below) : " << lambda_of_T(n, T, Lam, 1.0e4) << "\n";
+    std::cout << "  T=1e9  (above) : " << lambda_of_T(n, T, Lam, 1.0e9) << "\n";
+    std::cout << "==================================================\n";
+}
+
 int main(void)
 {
     cout << "Start: main" << endl;
@@ -2938,10 +3076,10 @@ int main(void)
 
 
 #if VERSION == 1
-    string name1 = "save_Q4_1_0.bin";   // Откуда скачиваем сетку
+    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Q4_3_6.bin";   // Куда сохраняем сетку
+    string name2 = "save_Xray_eta_100_eps_1.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -2960,10 +3098,13 @@ int main(void)
 
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 9000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 16700000; // 30000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
 
     double period_print = 0.015; // С каким периодом выводим в часах для расхода массы
     double period_print2 = 20.0; // 4.0  С каким периодом выводим в часах для 2д карт
+    double period_print3 = 0.2777777777777777; // Частота записи X-ray: APEC в часах
+    // 2 ks = 0.55555555555
+    // 1 ks = 0.2777777777777777
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
 
@@ -2996,8 +3137,23 @@ int main(void)
     FaceVars  d_vFace;
     NodeVars  d_node;
     double* dT;
+    int n_APEC = 0;
+    double* T_APEC = nullptr;
+    double* Lam_APEC = nullptr;
 
     CellVars  h_cell_phi_average;
+
+
+    // Загружаем таблицы APEC
+    if (!read_lambda_table("lambda_T_0.3keV.txt", n_APEC, T_APEC, Lam_APEC))
+    {
+        cout << "Error no file lambda_T_0.3keV.txt" << endl;
+        return 1;
+    }
+
+    // 2) test the APEC interpolator
+    //test_lambda_table(n_APEC, T_APEC, Lam_APEC);
+
 
     // 1) Загружаем таблицы COOLING на host
     CoolingTablesHost tab_host;
@@ -3012,9 +3168,6 @@ int main(void)
 
     // 2) Копируем COOLING на device
     CoolingTablesDevice tab_dev = to_device(tab_host);
-
-
-   
 
 
     // Выделение памяти для всех массивов
@@ -3366,6 +3519,7 @@ int main(void)
     dim3 grid((N + BX - 1) / BX, (M + BY - 1) / BY);
     int num_ = 0;
     int num2_ = 0;
+    int num3_ = 0;
 
     num_ = (int)(host_all_T * time_razmer / period_print);
     if (num_ < 0) num_ = 0;
@@ -3373,7 +3527,12 @@ int main(void)
     num2_ = (int)(host_all_T * time_razmer / period_print2);
     if (num2_ < 0) num2_ = 0;
 
+    num3_ = (int)(host_all_T * time_razmer / period_print3);
+    if (num3_ < 0) num3_ = 0;
+
     std::ofstream out_rashod("rashod_" + name2, std::ios::app);
+    std::ofstream out_APEC("APEC_" + name2);   // # t[hour]  r[R_*]  L(r, t)[erg / s] < -out_APEC
+    std::ofstream out_APEC2("t_APEC_" + name2);  // # t[hour]  L_x(t)[erg / s] < -out_APEC2
     //std::ofstream out_rashod("rashod_" + name2, std::ios::app);
 
     // Глобальный цикл
@@ -3603,8 +3762,50 @@ int main(void)
             num2_++;
         }
 
+        // Печатаем X-ray
+        if (host_all_T * time_razmer > period_print3 * num3_)
+        {
+            // Копируем обратно на хост
+            if (true)
+            {
+                copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
+                copyFromDevice(h_cell.p, d_cell.p, cellCount);
+            }
+
+            double R_STAR_CGS = 1.3224e12;
+            double R3 = kv3(R_STAR_CGS);  // Размерная величина: радиус звезды в кубе - это чтобы обезразмерить расстояния и площади
+            double LL = 0.0;
+            for (int i = 0; i < N; i++)
+            {
+                double LLL = 0.0;
+                double R = R_CENTER(i, 0);  // На самом деле центр R не зависит от j;
+                for (int j = 0; j < M - 1; j++)
+                {
+                    double r = R_CENTER(i, j);
+                    double phi = PHI_CENTER(j);
+                    double x = r * cos(phi);   // Расстояние до оси вращения
+                    int k = j * N + i;
+
+                    double rho = h_cell.rho[k]; // Берём плотность в ячейке
+                    double p = h_cell.p[k];     // Берём давление в ячейке
+                    double Temp = p / rho / const_p * T_eff; // Считаем температуру в ячейке и переводим в Кельвины
+                    rho = rho * rho_cgs;   // Переводим плотность в СГС
+                    LLL += CELL_AREA(i, j) * (2.0 * pi * x) * rho * rho * lambda_of_T(n_APEC, T_APEC, Lam_APEC, Temp);
+                }
+                double dr = R_EDGE(i + 1) - R_EDGE(i);
+                LL += LLL;
+                out_APEC << host_all_T * time_razmer << " " << R << " " << LLL * kv(R_STAR_CGS) / dr << endl;
+            }
+            out_APEC2 << host_all_T * time_razmer << " " << LL * R3 << endl;
+
+            num3_++;
+        }
+
+
+
+
         // Сохраняем результат в .bin
-        if (save_setka && step_ % 100000 == 0 && step_ > 10)
+        if (save_setka && step_ % 500000 == 0 && step_ > 10)
         {
             // Копируем обратно на хост
             if (true)
@@ -3654,11 +3855,14 @@ int main(void)
         }
 
 
-        if (host_all_T * time_razmer > 300.0) break;
+        if (host_all_T * time_razmer > 835.0) break;
+        //if (host_all_T * time_razmer > 300.0) break;
         //if (host_all_T * time_razmer > 125.0) break;
     }
 
     out_rashod.close();
+    out_APEC.close();
+    out_APEC2.close();
 
     // Считаем расход массы на гранях при R = Rb и Rb/2
     if (true)
@@ -4186,7 +4390,8 @@ int main(void)
 
     free_device_tables(tab_dev);
     free_host_tables(tab_host);
-
+    delete[] T_APEC;
+    delete[] Lam_APEC;
 
     return 0;
 }

@@ -71,7 +71,7 @@ double apply_cooling(double T_n, double dt, double rho,
     constexpr double m_p = 1.67262192e-24; // g
 
     // Y_star = Y(T_n) + C * dt,
-    // C = (Lambda_ref/T_ref) * (gamma-1) * rho * mu / (kB * m_p * mu_e * mu_H)
+    // C = eps_c * (Lambda_ref/T_ref) * (gamma-1) * rho * mu / (kB * m_p * mu_e * mu_H)
     double C = (tab.Lambda_ref / tab.T_ref)
         * (gamma - 1.0) * rho * mu
         / (kB * m_p * mu_e * mu_H);
