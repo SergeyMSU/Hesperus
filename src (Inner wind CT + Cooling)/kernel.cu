@@ -2445,8 +2445,8 @@ __global__ void update_cells(
         P += h_Pp[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pp[j * N + i] * S3;      // phi-
 
-        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P) + dTime * (Vx_1 * Fx + Vy_1 * Fy) // здесь добавил слагаемое с силой - проверить на 
-            / dV - dTime * (((U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) + p_1 + kvv(Bx_1, By_1, Bz_1) / cpi8) * Vx_1 - Bx_1 * skk(Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) / cpi4) / x) //
+        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P) // здесь добавил слагаемое с силой - проверить на 
+            / dV + dTime * (Vx_1 * Fx + Vy_1 * Fy)  - dTime * (((U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) + p_1 + kvv(Bx_1, By_1, Bz_1) / cpi8) * Vx_1 - Bx_1 * skk(Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) / cpi4) / x) //
             - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
 
 
