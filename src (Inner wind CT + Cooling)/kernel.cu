@@ -270,8 +270,8 @@
 //#define Bo_init (2.0 * sqrt(4.0 * pi * 2.0))// 0.317705// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 
 // Для Ud-Doula (там eta другая - посчитанная по параметрам на бесконечности
-#define Bo_init (92.7411)
-// 29.335 - для eta = 10
+#define Bo_init (25.9481)
+// 25.9481 - для eta = 10
 // 92.7411 - для eta = 100
 
 
@@ -2445,7 +2445,7 @@ __global__ void update_cells(
         P += h_Pp[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pp[j * N + i] * S3;      // phi-
 
-        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P)//
+        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P) + dTime * (Vx_1 * Fx + Vy_1 * Fy) // здесь добавил слагаемое с силой - проверить на 
             / dV - dTime * (((U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) + p_1 + kvv(Bx_1, By_1, Bz_1) / cpi8) * Vx_1 - Bx_1 * skk(Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) / cpi4) / x) //
             - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
 
@@ -3079,7 +3079,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_Xray_eta_100_eps_1.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps01-W00.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -3098,7 +3098,7 @@ int main(void)
 
 
     bool save_setka = true;                      // Надо ли сохранять сетку?
-    int all_step = 16700000; // 30000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
+    int all_step = 100000000; // 16700000; // 30000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
 
     double period_print = 0.015; // С каким периодом выводим в часах для расхода массы
     double period_print2 = 20.0; // 4.0  С каким периодом выводим в часах для 2д карт
@@ -3770,16 +3770,39 @@ int main(void)
             {
                 copyFromDevice(h_cell.rho, d_cell.rho, cellCount);
                 copyFromDevice(h_cell.p, d_cell.p, cellCount);
+                copyFromDevice(h_cell.Vx, d_cell.Vx, cellCount);
+                copyFromDevice(h_cell.Vy, d_cell.Vy, cellCount);
+                copyFromDevice(h_cell.Vz, d_cell.Vz, cellCount);
+                copyFromDevice(h_cell.Bx, d_cell.Bx, cellCount);
+                copyFromDevice(h_cell.By, d_cell.By, cellCount);
+                copyFromDevice(h_cell.Bz, d_cell.Bz, cellCount);
             }
 
             double R_STAR_CGS = 1.3224e12;
-            double R3 = kv3(R_STAR_CGS);  // Размерная величина: радиус звезды в кубе - это чтобы обезразмерить расстояния и площади
+            double RHO_CGS = rho_cgs;
+            double V_CGS = 6.96406E7;
             double LL = 0.0;
+            double LL10 = 0.0;  // Масса в телесном угле 10 градусов   +- 5
+            double LL20 = 0.0;  // Масса в телесном угле 20 градусов
+            double LL30 = 0.0;  // Масса в телесном угле 30 градусов
+            double LL40 = 0.0;  // Масса в телесном угле 40 градусов
+            double LL2 = 0.0;
+            double E_kin_r = 0.0;
+            double E_kin_the = 0.0;
+            double E_kin_phi = 0.0;
+            double E_th = 0.0;
+            double E_B_pole = 0.0;
+            double E_B_phi = 0.0;
             for (int i = 0; i < N; i++)
             {
                 double LLL = 0.0;
+                double LLL2 = 0.0;
+                double LLL10 = 0.0;   
+                double LLL20 = 0.0;
+                double LLL30 = 0.0;
+                double LLL40 = 0.0;
                 double R = R_CENTER(i, 0);  // На самом деле центр R не зависит от j;
-                for (int j = 0; j < M - 1; j++)
+                for (int j = 0; j < M; j++)
                 {
                     double r = R_CENTER(i, j);
                     double phi = PHI_CENTER(j);
@@ -3788,20 +3811,63 @@ int main(void)
 
                     double rho = h_cell.rho[k]; // Берём плотность в ячейке
                     double p = h_cell.p[k];     // Берём давление в ячейке
+                    double vx = h_cell.Vx[k];
+                    double vy = h_cell.Vy[k];
+                    double vz = h_cell.Vz[k];
+                    double bx = h_cell.Bx[k] + Bx_dipole(r, phi);
+                    double by = h_cell.By[k] + By_dipole(r, phi);
+                    double bz = h_cell.Bz[k];
                     double Temp = p / rho / const_p * T_eff; // Считаем температуру в ячейке и переводим в Кельвины
-                    rho = rho * rho_cgs;   // Переводим плотность в СГС
-                    LLL += CELL_AREA(i, j) * (2.0 * pi * x) * rho * rho * lambda_of_T(n_APEC, T_APEC, Lam_APEC, Temp);
+                    double dV = CELL_AREA(i, j) * (2.0 * pi * x);
+                    //rho = rho * rho_cgs;   // Переводим плотность в СГС
+                    LLL += dV * rho * rho * lambda_of_T(n_APEC, T_APEC, Lam_APEC, Temp);    // Xray
+                    LLL2 += dV * rho;   // масса в слое
+
+                    double Vr = vx * cos(phi) + vy * sin(phi);
+                    double Vthe = -vx * sin(phi) + vy * cos(phi);
+                    double Br = bx * cos(phi) + by * sin(phi);
+                    double Bthe = -bx * sin(phi) + by * cos(phi);
+
+                    E_kin_r += dV * 0.5 * rho * kv(Vr);
+                    E_kin_the += dV * 0.5 * rho * kv(Vthe);
+                    E_kin_phi += dV * 0.5 * rho * kv(vz);
+                    E_th += dV * p / (ggg - 1.0);
+					E_B_pole = dV * (kv(Br) + kv(Bthe)) / (8.0 * pi);
+                    E_B_phi = dV * (kv(bz)) / (8.0 * pi);
+
+                    double a = fabs(phi);
+                    if (a <= 20.0 * pi / 180.0)
+                    {
+                        double contrib = CELL_AREA(i, j) * (2.0 * pi * x) * rho;
+                        LLL40 += contrib;
+
+                        if (a <= 15.0 * pi / 180.0) LLL30 += contrib;
+                        if (a <= 10.0 * pi / 180.0) LLL20 += contrib;
+                        if (a <= 5.0 * pi / 180.0) LLL10 += contrib;
+                    }
+
                 }
                 double dr = R_EDGE(i + 1) - R_EDGE(i);
                 LL += LLL;
-                out_APEC << host_all_T * time_razmer << " " << R << " " << LLL * kv(R_STAR_CGS) / dr << endl;
+                LL2 += LLL2;
+                LL10 += LLL10;
+                LL20 += LLL20;
+                LL30 += LLL30;
+                LL40 += LLL40;
+                out_APEC << host_all_T * time_razmer << " " << R << " " << LLL * kv(R_STAR_CGS * RHO_CGS) / dr << " " << LLL2 * kv(R_STAR_CGS) * RHO_CGS / dr << " " <<
+                    LLL10 * kv(R_STAR_CGS) * RHO_CGS / dr << " " << LLL20 * kv(R_STAR_CGS) * RHO_CGS / dr << " " <<
+                    LLL30 * kv(R_STAR_CGS) * RHO_CGS / dr << " " << LLL40 * kv(R_STAR_CGS) * RHO_CGS / dr << endl;
             }
-            out_APEC2 << host_all_T * time_razmer << " " << LL * R3 << endl;
+            out_APEC2 << host_all_T * time_razmer << " " << LL * kv3(R_STAR_CGS) * kv(RHO_CGS) << " " << LL2 * kv3(R_STAR_CGS) * RHO_CGS
+                << " " << LL10 * kv3(R_STAR_CGS) * RHO_CGS << " " << LL20 * kv3(R_STAR_CGS) * RHO_CGS 
+                << " " << LL30 * kv3(R_STAR_CGS) * RHO_CGS << " " << LL40 * kv3(R_STAR_CGS) * RHO_CGS << " " << 
+                E_kin_r * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << " " << E_kin_the * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << " " << 
+                E_kin_phi * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << " " <<
+                E_th * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << " " << E_B_pole * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << " " << 
+                E_B_phi * kv3(R_STAR_CGS) * RHO_CGS * kv(V_CGS) << endl;
 
             num3_++;
         }
-
-
 
 
         // Сохраняем результат в .bin
