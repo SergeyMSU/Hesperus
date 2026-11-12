@@ -300,22 +300,7 @@
 #endif
 
 
-#if setka_q == 3
-// Диполь
-#define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
-#define By_dipole(r, phi) ( Bo_init * ( sin(phi)*sin(phi) - 0.5*cos(phi)*cos(phi) ) / ((r)*(r)*(r)) )
-#elif setka_q == 4
-// Квадруполь
-#define Bx_dipole(r,phi) ( 0.5 * Bo_init * cos(phi) \
-    * (4.0*sin(phi)*sin(phi) - cos(phi)*cos(phi)) \
-    / ((r)*(r)*(r)*(r)) )
 
-#define By_dipole(r,phi) ( 0.5 * Bo_init * sin(phi) \
-    * (5.0*sin(phi)*sin(phi) - 3.0) \
-    / ((r)*(r)*(r)*(r)) )
-#else
-#error "Unsupported setka_q B"
-#endif
 
 #define Br_test(r, phi) (Bo_init * sin(phi) / ((r)*(r)) )
 
@@ -348,6 +333,127 @@
 #define THREADS_PER_BLOCK 256    // Количество нитей в одном потоке // Необходимо, чтобы количество ячеек в сетке делилось на число нитей (лучше N делилось на число нитей)
 
 using namespace std;
+
+// --- параметры MMS ---
+#define epsV 0.1
+#define epsB 0.1
+
+
+namespace mms {
+
+    // phi: [-pi/2, pi/2], 0 -> экватор, +pi/2 -> северный полюс
+    __host__ __device__ __forceinline__
+    double theta_from_phi(double phi) {
+        return 0.5 * pi - phi;
+    }
+
+    // ---------- Поля ----------
+    __host__ __device__ __forceinline__
+        double rho(double r, double /*phi*/) {
+        return 1.0 / (r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double v_r(double r, double /*phi*/) {
+        return 1.0 - 0.5 / r;
+    }
+
+    __host__ __device__ __forceinline__
+        double v_theta(double r, double phi) {
+        double th = theta_from_phi(phi);
+        return epsV * std::sin(th) / (r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double v_phi(double /*r*/, double /*phi*/) {
+        return 0.0;
+    }
+
+    __host__ __device__ __forceinline__
+        double p(double r, double /*phi*/) {
+        return 1.0 / (r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double B_r(double r, double phi) {
+        double th = theta_from_phi(phi);
+        return (1.0 / (r * r * r) + epsB / (r * r)) * std::cos(th);
+    }
+
+    __host__ __device__ __forceinline__
+        double B_theta(double r, double phi) {
+        double th = theta_from_phi(phi);
+        return std::sin(th) / (2.0 * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double B_phi(double /*r*/, double /*phi*/) {
+        return 0.0;
+    }
+
+    // ---------- Источники ----------
+    __host__ __device__ __forceinline__
+        double S_rho(double r, double phi) {
+        double th = theta_from_phi(phi);
+        return (r + 4.0 * epsV * std::cos(th)) / (2.0 * r * r * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double S_mr(double r, double phi) {
+        return 0.0;
+        double th = theta_from_phi(phi);
+        double s = std::sin(th);
+        double s2 = s * s;
+        return (r * r * (-1.0 + 2.0 * r - 8.0 * r * r)
+            + (-4.0 * epsV * epsV + 2.0 * epsB * r) * s2) / (4.0 * r * r * r * r * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double S_mtheta(double r, double phi) {
+        return 0.0;
+        double th = theta_from_phi(phi);
+        double st = std::sin(th);
+        double ct = std::cos(th);
+        return ((epsV * (1.0 - 2.0 * r) * r
+            + 2.0 * (epsV * epsV - epsB * r * (1.0 + epsB * r)) * ct) * st)
+            / (2.0 * r * r * r * r * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double S_mphi(double /*r*/, double /*phi*/) {
+        return 0.0;
+    }
+
+    __host__ __device__ __forceinline__
+        double S_Br(double r, double phi) {
+        double th = theta_from_phi(phi);
+        double ct = std::cos(th);
+        double c2t = std::cos(2.0 * th);
+        return ((r - 2.0 * r * r) * ct
+            + epsV * (1.0 + epsB * r) * (1.0 + 3.0 * c2t))
+            / (2.0 * r * r * r * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double S_Btheta(double r, double phi) {
+        double th = theta_from_phi(phi);
+        double st = std::sin(th);
+        double ct = std::cos(th);
+        return (((3.0 - 4.0 * r) * r
+            + 4.0 * epsV * (4.0 + 3.0 * epsB * r) * ct) * st)
+            / (4.0 * r * r * r * r * r * r);
+    }
+
+    __host__ __device__ __forceinline__
+        double S_Bphi(double /*r*/, double /*phi*/) {
+        return 0.0;
+    }
+
+} // namespace mms
+
+#define Bx_dipole(r, phi) 0.0
+#define By_dipole(r, phi) 0.0
+
 
 __host__ __device__ int sign(double& x);
 __host__ __device__ double minmod(double x, double y);
@@ -1964,6 +2070,7 @@ __global__ void update_Bn_from_Ez(
     double* v_Bn,            // (N+1) x M, обновляем на месте
     const double* dT)
 {
+    double DT = 0.25;  // *dT
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -1979,6 +2086,12 @@ __global__ void update_Bn_from_Ez(
         double phi2 = phi1;
         double r2 = R_EDGE(i);
         double x2 = r2 * cos(phi2);
+
+        double r_mid = 0.5 * (r1 + r2);
+        double phi_mid = phi1;
+
+        // S_Bn для грани с фиксированным phi:
+        double S_Bn = -mms::S_Btheta(r_mid, phi_mid);
         
         double znamenatel = (x1 + x2) * DR(i);
         if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
@@ -1986,7 +2099,7 @@ __global__ void update_Bn_from_Ez(
         double h_Bn_do = h_Bn[idx_hface(i, j + 1)];
         double A1 = slot_h_from_left[idx_node(i + 1, j + 1)];
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
-        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
+        double h_Bn_posle = h_Bn_do - 2.0 * DT * (A2 * x2 - A1 * x1) / (znamenatel) + DT * S_Bn;
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / DR(i);
 
 
@@ -2004,13 +2117,19 @@ __global__ void update_Bn_from_Ez(
         double r2 = r1;
         double x2 = r2 * cos(phi2);
 
+        double phi_mid = PHI_CENTER(j);
+        double r_mid = r1;
+
+        // v-face normal = e_r, Bn = B_r
+        double S_Bn = -mms::S_Br(r_mid, phi_mid);
+
         double znamenatel = (x1 + x2) * (DPHI(j) * r1);
         if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
 
         double h_Bn_do = v_Bn[idx_vface(i + 1, j)];
         double A1 = slot_h_from_left[idx_node(i + 1, j)];
         double A2 = slot_h_from_left[idx_node(i + 1, j + 1)];
-        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
+        double h_Bn_posle = h_Bn_do - 2.0 * DT * (A2 * x2 - A1 * x1) / (znamenatel)+ DT * S_Bn;
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
 
@@ -2036,7 +2155,7 @@ __global__ void update_Bn_from_Ez(
         double A1 = slot_h_from_left[idx_node(i, j)];
         double A2 = slot_h_from_left[idx_node(i, j + 1)];
 
-        double h_Bn_posle = h_Bn_do - 2.0 * *dT * (A2 * x2 - A1 * x1) / (znamenatel);
+        double h_Bn_posle = h_Bn_do - 2.0 * DT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
 
@@ -2066,7 +2185,8 @@ __global__ void update_cells(
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    if (i >= N || j >= M) return;
+    if (i >= N - 5 || j >= M - 5) return;
+    if (i <= 5 || j <=  5) return;
 
     // Индексы ячейки
     int idx = j * N + i;
@@ -2095,10 +2215,10 @@ __global__ void update_cells(
 
     double Fx = 0.0, Fy = 0.0;
 
-    double dTime = *dT; // 1.0E-4; // *dT;
+    double dTime = 0.25; // *dT; // 1.0E-4; // *dT;
 
     // Вычисляем силы
-    if (true)
+    if (false)
     {
         double fr = 0.0;
         fr = (F_grav + F_continuum) * rho_1 / kv(r);  // Сила притяжения к звезде + радиационное отталкивание от континуума
@@ -2188,6 +2308,27 @@ __global__ void update_cells(
 
     double ppp = 0.0;
     bool bb = false;
+
+    double Srho = mms::S_rho(r, phi);
+    double Smr = mms::S_mr(r, phi);
+    double Smt = mms::S_mtheta(r, phi);
+    double Smp = mms::S_mphi(r, phi);
+    double SBr = mms::S_Br(r, phi);
+    double SBt = mms::S_Btheta(r, phi);
+    double SBp = mms::S_Bphi(r, phi);
+
+    double th = mms::theta_from_phi(phi);
+    double st = sin(th), ct = cos(th);
+
+    double Smx = Smr * cos(phi) - (-Smt) * sin(phi); // Smr * st + Smt * ct;
+    double Smy = Smr * sin(phi) + (-Smt) * cos(phi); ; // Smr* ct - Smt * st;
+    double Smz = Smp;
+
+    double SBx = SBr * st + SBt * ct;
+    double SBy = SBr * ct - SBt * st;
+    double SBz = SBp;
+
+
     // Плотность
     if (true)
     {
@@ -2206,76 +2347,7 @@ __global__ void update_cells(
         //}
 
         ppp = P;
-        rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x);
-
-        //if (i == 0 && j > M - 4)
-        //{
-        //    printf("%d rho: %E, %E, %E, %E, %E \n ", j, (P / dV + rho_1 * Vx_1 / x), P, dV,
-        //        Vx_1, x);
-        //}
-
-        //if (rho_2 <= 0.0)
-        //{
-        //    printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
-        //    rho_2 = 1.0E-7;
-        //    bb = true;
-        //}
-
-        // Нижнее ограничение на плотность (в петлях в какой-то момент плотность может стать очень маленькой, а альфвеновская скорость приближается к скорости света)
-        // 1.0E-3
-        if (rho_2 < 1.0E-3 && r < 1.5)
-        {
-            rho_2 = 1.0E-3;
-
-            Vx[idx] = 0.0;
-            Vy[idx] = 0.0;
-            Vz[idx] = 0.0;
-
-            bb = true;
-        }
-
-        if (rho_2 < 1.0E-2 && r < 1.1)
-        {
-            rho_2 = 1.0E-2;
-
-            Vx[idx] = 0.0;
-            Vy[idx] = 0.0;
-            Vz[idx] = 0.0;
-
-            bb = true;
-        }
-
-        if (rho_2 < 1.0 && r < 1.003)
-        {
-            rho_2 = 1.0;
-
-            Vx[idx] = 0.0;
-            Vy[idx] = 0.0;
-            Vz[idx] = 0.0;
-
-            bb = true;
-        }
-
-        if (rho_2 <= 0.0)
-        {
-            printf("Error rho < 0;  %E, %E, %E, %E\n", rho_1, rho_2, r, phi);
-            rho_2 = 1.0E-7;
-            p_2 = rho_2 * const_p;
-            Vx[idx] = 0.0;
-            Vy[idx] = 0.0;
-            Vz[idx] = 0.0;
-            bb = true;
-        }
-
-
-
-
-        /*if (rho_2 > 300.0)
-        {
-            rho_2 = 300.0;
-            bb = true;
-        }*/
-
+        rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x) + dTime * Srho;
         rho[idx] = rho_2;
     }
 
@@ -2291,12 +2363,7 @@ __global__ void update_cells(
         P += h_Pvx[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pvx[j * N + i] * S3;      // phi-
 
-        if (i == print_i && j == print_j)
-        {
-            printf("POTOK vx: %E, %E, %E, %E \n ", v_Pvx[j * (N + 1) + (i + 1)], -v_Pvx[j * (N + 1) + i], h_Pvx[(j + 1) * N + i], -h_Pvx[j * N + i]);
-        }
-
-        Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx) / rho_2;
+        Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx + dTime * Smx) / rho_2;
         Vx[idx] = Vx_2;
     }
 
@@ -2310,12 +2377,8 @@ __global__ void update_cells(
         P += h_Pvy[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pvy[j * N + i] * S3;      // phi-
 
-        if (i == print_i && j == print_j)
-        {
-            printf("POTOK vy: %E, %E, %E, %E \n ", v_Pvy[j * (N + 1) + (i + 1)], -v_Pvy[j * (N + 1) + i], h_Pvy[(j + 1) * N + i], -h_Pvy[j * N + i]);
-        }
-
-        Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy) / rho_2;
+       
+        Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy + dTime * Smy) / rho_2;
         Vy[idx] = Vy_2;
     }
 
@@ -2329,12 +2392,7 @@ __global__ void update_cells(
         P += h_Pvz[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pvz[j * N + i] * S3;      // phi-
 
-        if (i == print_i && j == print_j)
-        {
-            printf("POTOK vz: %E, %E, %E, %E \n ", v_Pvz[j * (N + 1) + (i + 1)], -v_Pvz[j * (N + 1) + i], h_Pvz[(j + 1) * N + i], -h_Pvz[j * N + i]);
-        }
-
-        Vz_2 = (rho_1 * Vz_1 - dTime * P / dV - 2.0 * dTime * (rho_1 * Vx_1 * Vz_1 - Bx_1 * Bz_1 / cpi4) / x) / rho_2;
+        Vz_2 = (rho_1 * Vz_1 - dTime * P / dV - 2.0 * dTime * (rho_1 * Vx_1 * Vz_1 - Bx_1 * Bz_1 / cpi4) / x + dTime * Smz) / rho_2;
         Vz[idx] = Vz_2;
     }
 
@@ -2373,52 +2431,13 @@ __global__ void update_cells(
             double r2 = R_EDGE(i + 1);
             double x2 = r2 * cos(phi2);
 
-            /*double r1 = R_EDGE(i);
-            double r = R_CENTER(i, j);
-            double r2 = R_EDGE(i + 1);
-            double phi1 = PHI_LEFT(i);
-            double phi2 = PHI_RIGHT(i);
-
-            double A1 = pi * r1 * DPHI(j) * (r1 * cos(phi1) + r1 * cos(phi2));
-            double A2 = pi * r2 * DPHI(j) * (r2 * cos(phi1) + r2 * cos(phi2));
-            double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));*/
-
-            //Br_center = (Br_left * x1 + Br_right * x2) / (2.0 * x);
             Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
-
-
-            //double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
-            //double d_left = R_CENTER(i, j) - R_EDGE(i);
-            //Br_center = (Br_left * d_right + Br_right * d_left) / (d_left + d_right);
-            
         }
 
         // --- Bphi из горизонтальных (нижней и верхней) граней ---
         {
             double Bphi_bottom = h_Bn[idx_hface(i, j)];
             double Bphi_top = h_Bn[idx_hface(i, j + 1)];
-
-
-            /*double phi1 = PHI_LEFT(i);
-            double r1 = r;
-            double x1 = r1 * cos(phi1);
-
-            double phi2 = PHI_RIGHT(i);
-            double r2 = r;
-            double x2 = r2 * cos(phi2);*/
-
-            /*double r1 = R_EDGE(i);
-            double r = R_CENTER(i, j);
-            double r2 = R_EDGE(i + 1);
-            double phi1 = PHI_LEFT(i);
-            double phi2 = PHI_RIGHT(i);
-
-            double A1 = pi * DR(i) * (r1 * cos(phi1) + r2 * cos(phi1));
-            double A2 = pi * DR(i) * (r1 * cos(phi2) + r2 * cos(phi2));
-            double A = pi * DR(i) * (r1 * cos(phi) + r2 * cos(phi));*/
-
-            //Bphi_center = (Bphi_bottom * x1 + Bphi_top * x2) / (2.0 * x);
-
 
             double d_top = PHI_RIGHT(j) - PHI_CENTER(j);
             double d_bottom = PHI_CENTER(j) - PHI_LEFT(j);
@@ -2429,95 +2448,6 @@ __global__ void update_cells(
 
         Bx[idx] = Bx_2 = Br_center * cos(phi_c) - Bphi_center * sin(phi_c);
         By[idx] = By_2 = Br_center * sin(phi_c) + Bphi_center * cos(phi_c);
-    }
-
-
-    Bx_2 += Bx_dipole(r, phi);
-    By_2 += By_dipole(r, phi);
-
-    // p
-    if (bb == false)
-    {
-        double P = 0.0;
-
-        P += v_Pp[j * (N + 1) + (i + 1)] * S1;   // r+
-        P -= v_Pp[j * (N + 1) + i] * S2;       // r-
-        P += h_Pp[(j + 1) * N + i] * S3;  // phi+
-        P -= h_Pp[j * N + i] * S3;      // phi-
-
-        p_2 = (U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) - dTime * (P)
-            / dV + dTime * (Vx_1 * Fx + Vy_1 * Fy)  - dTime * (((U8(rho_1, p_1, Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) + p_1 + kvv(Bx_1, By_1, Bz_1) / cpi8) * Vx_1 - Bx_1 * skk(Vx_1, Vy_1, Vz_1, Bx_1, By_1, Bz_1) / cpi4) / x) //
-            - 0.5 * rho_2 * kvv(Vx_2, Vy_2, Vz_2) - kvv(Bx_2, By_2, Bz_2) / cpi8) * (ggg - 1.0);
-
-
-        double Temp = p_2 / rho_2 / const_p;
-
-        // Если температура меньше эффективной температуры поверхности звезды
-        if (Temp < 1.0)
-        {
-            Temp = 1.0;
-            p_2 = const_p * rho_2 * Temp;
-        }
-
-        //p_2 = const_p * rho_2;
-        p[idx] = p_2;
-    }
-
-    // cooling 
-    //if (r > 1.02 && true)
-    if (true)
-    {
-        double Temp = p_2 / rho_2 / const_p * T_eff; // Считаем температуру в Кельвинах
-        double Temp2 = apply_cooling(Temp, dTime * Time_sec, rho_2 * rho_cgs, ggg, 0.62, 1.17, 1.4, tab, T_eff)/ T_eff;
-        // Проверка на floour температуру уже сидит внутри apply_cooling
-
-        if (isnan(Temp2) == true)
-        {
-            printf("ERROR NAN Temp2 =: %E, %E, %E, %E, %E, \n ", Temp2, Temp, rho_2, r, phi);
-            Temp2 = Temp;
-        }
-        
-        p_2 = const_p * rho_2 * Temp2;
-        p[idx] = p_2;
-    }
-    else
-    {
-        // Держим изотерму вблизи поверхности звезды
-        //p_2 = const_p * rho_2;
-        //p[idx] = p_2;
-    }
-
-    if (bb == false && r < 1.005)
-    {
-        double Vr = Vx[idx] * cos(phi) + Vy[idx] * sin(phi);
-
-        if (fabs(Vr) / sqrt(ggg * p_2 / rho_2) > 1.0)
-        {
-            double Vthe = -Vx[idx] * sin(phi) + Vy[idx] * cos(phi);
-            if (Vr > 0)
-            {
-                Vr = 0.9 * sqrt(ggg * p_2 / rho_2);
-            }
-            else
-            {
-                Vr = -0.9 * sqrt(ggg * p_2 / rho_2);
-            }
-
-            Vx[idx] = Vr * cos(phi) - Vthe * sin(phi);
-            Vy[idx] = Vr * sin(phi) + Vthe * cos(phi);
-        }
-    }
-
-
-    if (isnan(Vx[idx]) == true || isnan(rho_2) == true || isnan(p_2) == true)
-    {
-        printf("ERROR NAN =: %E, %E, %E, %E, %E, \n ", rho_2, p_2, Vx[idx], r, phi);
-    }
-
-
-    if (i == print_i && j == print_j)
-    {
-        printf("CELL 0;100 =: %E, %E, %E, %E, %E, %E, %E, %E, %E \n ", rho_2, Vx_2, Vy_2, Vz_2, Fx, Fy, (ppp / dV + rho_1 * Vx_1 / x), ppp, x);
     }
 }
 
@@ -3070,7 +3000,7 @@ int main(void)
     // "save_zOph_2(350x256).bin" - МГД решение (B0 = 0.45542) без вращения
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
 
-    bool read_setka = true;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
+    bool read_setka = false;                         // Нужно ли считывать основную сетку с файла (значения в центрах ячеек)
     bool read_setka_Bn = false;                     // Нужно ли считывать bn на гранях с файла (есть ли этот файл вообще)
     // "save_paper-2_1(350x256).bin"
 
@@ -3097,7 +3027,7 @@ int main(void)
     cout << "name2 = " << name2 << endl << endl << endl;
 
 
-    bool save_setka = true;                      // Надо ли сохранять сетку?
+    bool save_setka = false;                      // Надо ли сохранять сетку?
     int all_step = 100000000; // 16700000; // 30000000; // 17000 * 50; // 17000 * 3; // 24000 * 60 * 9; // Число шагов
 
     double period_print = 0.015; // С каким периодом выводим в часах для расхода массы
@@ -3363,7 +3293,7 @@ int main(void)
             phig = PHI_RIGHT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j + 1)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j + 1)] = -mms::B_theta(rg, phig);
             //h_hFace.Bn[idx_hface(i, j + 1)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Нижняя грань
@@ -3371,7 +3301,7 @@ int main(void)
             phig = PHI_LEFT(j);
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
-            h_hFace.Bn[idx_hface(i, j)] = 0.0;
+            h_hFace.Bn[idx_hface(i, j)] = -mms::B_theta(rg, phig);
             //h_hFace.Bn[idx_hface(i, j)] = -(- Bx * sin(phig) + By * cos(phig));
 
             // Правая грань
@@ -3380,7 +3310,7 @@ int main(void)
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
             //h_vFace.Bn[idx_vface(i + 1, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
-            h_vFace.Bn[idx_vface(i + 1, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i + 1, j)] = mms::B_r(rg, phig);
             //h_vFace.Bn[idx_vface(i + 1, j)] = Bx * cos(phig) + By * sin(phig);
 
             // Левая грань
@@ -3389,14 +3319,14 @@ int main(void)
             Bx = Bx_dipole(rg, phig);
             By = By_dipole(rg, phig);
             //h_vFace.Bn[idx_vface(i, j)] = Br_test(rg, phig) - (Bx * cos(phig) + By * sin(phig));
-            h_vFace.Bn[idx_vface(i, j)] = 0.0;
+            h_vFace.Bn[idx_vface(i, j)] = mms::B_r(rg, phig);
             //h_vFace.Bn[idx_vface(i, j)] = Bx * cos(phig) + By * sin(phig);
         }
     }
 
 
     // Заполнение массивов начальными условиями
-    if (false)
+    if (true)
     //if (read_setka == false)
     {
         for (int k = 0; k < K; k++)  // Заполняем начальные условия
@@ -3407,35 +3337,35 @@ int main(void)
             r = R_CENTER(n, m);
             phi = PHI_CENTER(m);
 
-            double x = r * cos(phi);
-            double y = r * sin(phi);
+            // theta от полюса: theta = pi/2 - phi
+            double theta = mms::theta_from_phi(phi);
+            double st = std::sin(theta);
+            double ct = std::cos(theta);
 
-            double dist = sqrt(x * x + y * y);
-            double the = polar_angle(y, x);
-            double vr = 0.0009 + pow(max(1.0 - 1.0 / dist, 0.0), 0.71);
-            double vphi = V_phi_init * sin(the);
-            double rho = rho_in / kv(dist);
+            // Сферические компоненты полей (аналитика MMS)
+            double rho_val = mms::rho(r, phi);
+            double vr_val = mms::v_r(r, phi);
+            double vth_val = mms::v_theta(r, phi);
+            double vphi_val = mms::v_phi(r, phi);
+            double p_val = mms::p(r, phi);
+            double Br_val = mms::B_r(r, phi);
+            double Bth_val = mms::B_theta(r, phi);
+            double Bphi_val = mms::B_phi(r, phi);
 
-            /*h_cell.rho[k] = rho;
-            h_cell.p[k] = rho * const_p;
-            h_cell.Vx[k] = vr * x / dist;
-            h_cell.Vy[k] = vr * y / dist;*/
-            h_cell.Vz[k] = 0.0;
+            // Примитивные переменные
+            h_cell.rho[k] = rho_val;
+            h_cell.p[k] = p_val;                 // в нашем тесте p = rho
 
-            //h_cell.rho[k] = 1.0;
-            //h_cell.Vx[k] = 1.0 * x / dist;
-            //h_cell.Vy[k] = 1.0 * y / dist;
-            //h_cell.Vz[k] = 0.0;
+            // Скорость: (r, theta, phi) -> (x, y, z)
+            // x = r sin(theta),  y = r cos(theta),  z = тороидальное
+            h_cell.Vx[k] = vr_val * st + vth_val * ct;
+            h_cell.Vy[k] = vr_val * ct - vth_val * st;
+            h_cell.Vz[k] = vphi_val;
 
-
-            h_cell.Bx[k] = 0.0;// Bx_dipole(r, phi);
-            h_cell.By[k] = 0.0;// By_dipole(r, phi);
-            h_cell.Bz[k] = 0.0;
-
-            /*double Br = Br_test(r, phi);
-            h_cell.Bx[k] = Br * x / dist - Bx_dipole(r, phi);
-            h_cell.By[k] = Br * y / dist - By_dipole(r, phi);
-            h_cell.Bz[k] = 0.0;*/
+            // Магнитное поле: (r, theta, phi) -> (x, y, z)
+            h_cell.Bx[k] = Br_val * st + Bth_val * ct;
+            h_cell.By[k] = Br_val * ct - Bth_val * st;
+            h_cell.Bz[k] = Bphi_val;
         }
     }
 
@@ -3536,7 +3466,7 @@ int main(void)
     //std::ofstream out_rashod("rashod_" + name2, std::ios::app);
 
     // Глобальный цикл
-    for (int step_ = 1; step_ <= all_step; step_++)
+    for (int step_ = 1; step_ <= 1; step_++)
     {
         if (step_ % 10000000 == 0)
         {
@@ -4052,7 +3982,117 @@ int main(void)
         fout_extra.close();
     }
 
+    // Строим невязки
+    if (true)
+    {
+        ofstream fout6;
+        fout6.open("nevyazka.txt");
+
+        double L2_rho = 0, L2_Vr = 0, L2_Vthe = 0, L2_Br = 0, L2_Bthe = 0;
+        double L2_Vx = 0, L2_Vy = 0, L2_Vz = 0;
+        double L1_rho = 0, L1_Vr = 0, L1_Vthe = 0, L1_Br = 0, L1_Bthe = 0;
+        int count = 0;
+        double norm_rho = 0, norm_Vr = 0, norm_Vthe = 0;
+        double norm_Vx = 0, norm_Vy = 0, norm_Vz = 0;
+        double norm_Br = 0, norm_Bthe = 0;
+
+        for (int k = 0; k < K; k++)
+        {
+            int i = k % N;
+            int j = (k - i) / N;
+
+            // Отступаем 5 ячеек от всех границ
+            if (i < 5 || i >= N - 5 || j < 5 || j >= M - 5) continue;
+
+            double phi = PHI_CENTER(j);
+            double r = R_CENTER(i, j);
+
+            double x = r * cos(phi);
+            double y = r * sin(phi);
+
+            // ---------- Численное (полное) поле ----------
+            double bx_num = h_cell.Bx[k] + Bx_dipole(r, phi);
+            double by_num = h_cell.By[k] + By_dipole(r, phi);
+            double bz_num = h_cell.Bz[k];
+
+            double Vr_num = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / r;
+            double Vthe_num = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / r;
+            double Br_num = (bx_num * x + by_num * y) / r;
+            double Bthe_num = (bx_num * y - by_num * x) / r;
+
+            // ---------- Точное (MMS) поле ----------
+            double th = mms::theta_from_phi(phi);
+            double st = sin(th), ct = cos(th);
+
+            double rho_ex = mms::rho(r, phi);
+            double Vr_ex = mms::v_r(r, phi);
+            double Vthe_ex = mms::v_theta(r, phi);
+            double Vphi_ex = mms::v_phi(r, phi);
+            double Br_ex = mms::B_r(r, phi);
+            double Bthe_ex = mms::B_theta(r, phi);
+            double Bphi_ex = mms::B_phi(r, phi);
+
+            double Vx_ex = Vr_ex * st + Vthe_ex * ct;
+            double Vy_ex = Vr_ex * ct - Vthe_ex * st;
+            double Vz_ex = Vphi_ex;
+
+            double Bx_ex = Br_ex * st + Bthe_ex * ct;
+            double By_ex = Br_ex * ct - Bthe_ex * st;
+            double Bz_ex = Bphi_ex;
+
+            // ---------- Невязки ----------
+            double drho = h_cell.rho[k] - rho_ex;
+            double dVx = h_cell.Vx[k] - Vx_ex;
+            double dVy = h_cell.Vy[k] - Vy_ex;
+            double dVz = h_cell.Vz[k] - Vz_ex;
+            double dBx = bx_num - Bx_ex;
+            double dBy = by_num - By_ex;
+            double dBz = bz_num - Bz_ex;
+
+            double dVr = Vr_num - Vr_ex;
+            double dVthe = Vthe_num - Vthe_ex;
+            double dBr = Br_num - Br_ex;
+            double dBthe = Bthe_num - Bthe_ex;
+
+            // ---------- Аккумуляторы ----------
+            L2_rho += drho * drho;
+            L2_Vr += dVr * dVr;
+            L2_Vthe += dVthe * dVthe;
+            L2_Vx += dVx * dVx;
+            L2_Vy += dVy * dVy;
+            L2_Vz += dVz * dVz;
+            L2_Br += dBr * dBr;
+            L2_Bthe += dBthe * dBthe;
+
+            L1_rho += fabs(drho);
+            L1_Vr += fabs(dVr);
+            L1_Vthe += fabs(dVthe);
+            L1_Br += fabs(dBr);
+            L1_Bthe += fabs(dBthe);
+
+            norm_rho += rho_ex * rho_ex;
+            norm_Vr += Vr_ex * Vr_ex;
+            norm_Vthe += Vthe_ex * Vthe_ex;
+            norm_Vx += Vx_ex * Vx_ex;
+            norm_Vy += Vy_ex * Vy_ex;
+            norm_Br += Br_ex * Br_ex;
+            norm_Bthe += Bthe_ex * Bthe_ex;
+
+            count++;
+        }
+
+        fout6 << "L2(rho)   = " << sqrt(L2_rho / count) / sqrt(norm_rho / count) << endl;
+        fout6 << "L2(Vx)    = " << sqrt(L2_Vx / count) / sqrt(norm_Vx / count) << endl;
+        fout6 << "L2(Vy)    = " << sqrt(L2_Vy / count) / sqrt(norm_Vy / count) << endl;
+        fout6 << "L2(Vr)    = " << sqrt(L2_Vr / count) / sqrt(norm_Vr / count) << endl;
+        fout6 << "L2(Vthe)  = " << sqrt(L2_Vthe / count) / sqrt(norm_Vthe / count) << endl;
+        fout6 << "L2(Br)    = " << sqrt(L2_Br / count) / sqrt(norm_Br / count) << endl;
+        fout6 << "L2(Bthe)  = " << sqrt(L2_Bthe / count) / sqrt(norm_Bthe / count) << endl;
+        fout6.close();
+    }
+
     Print_results_2D(-1, 0.0, h_cell);
+
 
     // Печатаем 1д файл по r экватор
     if (true)
