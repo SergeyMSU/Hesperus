@@ -10,13 +10,13 @@
 #include "Header.h"
 
 #define Omega 0.0
-#define N 310 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 100 // 256 // //1280 //1280                 // Количество ячеек по y
+#define N 620 // 7167 //1792 //1792                 // Количество ячеек по x
+#define M 256 // 256 // //1280 //1280                 // Количество ячеек по y
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)             // Внешний радиус сетки
-#define qb (1.021)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+#define qb (1.01)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.0624)              // можно настроить; при большом M брать близким к 1
+#define qphi (1.025)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define print_i (34800)           // предполагаем, что M чётное
 #define print_j (254)           // предполагаем, что M чётное
@@ -105,13 +105,13 @@
 #define CELL_AREA(i,j) (0.5 * (R_EDGE(i + 1) * R_EDGE(i + 1) - R_EDGE(i) * R_EDGE(i)) * DPHI(j))   // неравномерный угол
 
 
-#define const_p 0.000119365 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
+#define const_p 0.00109754 // 0.0000854344 // 0.000186401  // (0.000447362)     // p = const_p * rho
 //#define rho_in 0.8 // (0.220637)     // p = const_p * rho
-#define rho_in 1.0 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
+#define rho_in 84.1141 // 1.0 // 0.45 - всё с этой было посчитано // (0.220637)     // p = const_p * rho
 
-#define F_grav (-0.0875475)           // Коэффициент перед силой гравитации
-#define F_continuum (0.0436174)     // Коэффициент перед силой радиационного давления (континуума)
-#define F_line  (0.0126459) // (0.067358)     // Коэффициент внутри line-driven силы
+#define F_grav (-0.5)           // Коэффициент перед силой гравитации
+#define F_continuum (0.0)     // Коэффициент перед силой радиационного давления (континуума)
+#define F_line  (1.4855) // (0.067358)     // Коэффициент внутри line-driven силы
 //#define alpha_line (0.752342)      // Коэффициент внутри line-driven силы
 //#define k_line (0.00587879)      // Коэффициент внутри line-driven силы
 
@@ -119,10 +119,10 @@
 
 // 0.0   0.00586533     0.0545476    0.0967779    0.173027    0.304997  
 // 0.0635411     0.317705  0.508329  0.635411    1.58853  4.44787
-#define Bo_init 0.332116// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
+#define Bo_init  (2.0 * sqrt(4.0 * pi * 16.4978))// 1.58853  //0.545476  // 0.45542// 1.53551  // (15.0 * 0.00314065) //(15.0 * 0.00314065) // 0.06 (0.00587879) // (0.108238)    
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
 
-#define V_phi_init (0.00208333)  // (0.266667)   //   Скорость вращения звезды
+#define V_phi_init 0.00676524// (0.00208333)  // (0.266667)   //   Скорость вращения звезды
 
 // TODO-1 если надо убрать фоновое магнитное поле
 #define Bx_dipole(r, phi) ( (3.0/2.0) * Bo_init * sin(phi) * cos(phi) / ((r)*(r)*(r)) )
@@ -2826,9 +2826,39 @@ __global__ void add2_TVD(double3* s, double3* u, double3* b, double3* s2, double
         s2[index].x = s_1.x - *T_do * (PS.x / dV + s_1.x * u_1.x / x);
         //s2[index].x = s_1.x - (*T_do / dV) * PS.x;   // В декартовых координатах
 
-        if (s2[index].x < 1.0E-5 && r < 1.5)
+        if (s2[index].x < 1.0E-3 && r < 1.5)
         {
-            s2[index].x = 1.0E-5;
+            s2[index].x = 1.0E-3;
+
+            u2[index].x = 0.0;
+            u2[index].y = 0.0;
+            u2[index].z = 0.0;
+
+            b2[index].x = b[index].x;
+            b2[index].y = b[index].y;
+            b2[index].z = b[index].z;
+
+            bb = true;
+        }
+
+        if (s2[index].x < 1.0E-2 && r < 1.1)
+        {
+            s2[index].x = 1.0E-2;
+
+            u2[index].x = 0.0;
+            u2[index].y = 0.0;
+            u2[index].z = 0.0;
+
+            b2[index].x = b[index].x;
+            b2[index].y = b[index].y;
+            b2[index].z = b[index].z;
+
+            bb = true;
+        }
+
+        if (s2[index].x < 1.0 && r < 1.003)
+        {
+            s2[index].x = 1.0;
 
             u2[index].x = 0.0;
             u2[index].y = 0.0;
@@ -3117,9 +3147,9 @@ int main(void)
     // в 1 - коллебания на оси простирались примерно до x = 1.37
     // "save_zOph_3(350x256).bin" и "save_zOph_4(350x256).bin" - полная модель с вращением. Но есть артефакты - не уверен в правильности
 
-    string name1 = "save_GD.bin";   // Откуда скачиваем
-    string name2 = "save_D001-m2--.bin";   // Куда сохраняем
-    int all_step = 24000 * 15; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294  25
+    string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем
+    string name2 = "save_Q3_1_1.bin--.bin";   // Куда сохраняем
+    int all_step = 500000; // 24000 * 60; // 50000 * 6 * 2;// 1 * 1;  // 294  25
     double time_razmer = 1.53056;
 
     double3* host_s;
@@ -3198,7 +3228,7 @@ int main(void)
         {
             bfin.read((char*)&host_s[k].x, sizeof(host_s[k].x));
 
-            //bfin.read((char*)&host_s[k].y, sizeof(host_s[k].y));
+            bfin.read((char*)&host_s[k].y, sizeof(host_s[k].y));
             //bfin.read((char*)&host_s[k].z, sizeof(host_s[k].z));
 
             bfin.read((char*)&host_u[k].x, sizeof(host_u[k].x));
@@ -3418,7 +3448,7 @@ int main(void)
             exit(-1);
         }
 
-        if ((i % (20000000 * 10) == 0))
+        if ((i % (100000) == 0) && i > 1)
         {
             cudaMemcpy(host_s, s, size, cudaMemcpyDeviceToHost);
             cudaMemcpy(host_u, u, size2, cudaMemcpyDeviceToHost);
