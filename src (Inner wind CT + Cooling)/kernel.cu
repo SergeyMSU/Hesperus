@@ -12,14 +12,48 @@
 #include "cooling_device.cuh"
 
 #define Omega 0.0
-#define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
-#define M 256 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+//#define N 620 // 1240 // 620 // 402 // 350 // 7167 //1792 //1792                 // Количество ячеек по x
+//#define M 256 // 256 // 448 // 512 // 256 // 256 // 256 // //1280 //1280                 // Количество ячеек по y  - должно делиться на 4 для квадруполя и на 2 для диполя
+
+
+// 155 x 64
+//#define N 155
+//#define M 64
+//#define qb 1.04060401
+//#define qphi 1.103812890625
+
+// 310 x 128
+//#define N 310
+//#define M 128
+//#define qb 1.0201
+//#define qphi 1.050625
+
+// 620 x 256
+//#define N 620
+//#define M 256
+//#define qb 1.01
+//#define qphi 1.025
+
+// 1240 x 512
+//#define N 1240
+//#define M 512
+//#define qb 1.004987562112089
+//#define qphi 1.012422836565829
+
+// 2480 x 1024
+#define N 2480
+#define M 1024
+#define qb 1.0024906795078
+#define qphi 1.0061922463256
+
+
+
 // Квадруполярная сетка работает только для 256
 #define K (N*M)                // Количество ячеек в сетке
 #define Rb (15.0)  // (6.0)             // Внешний радиус сетки
-#define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
+//#define qb (1.01) // (1.005) // (1.01) // (1.01999785) // (1.02)            // Сгущение сетки каждая следующая ширина на (qb - 1)% больше предыдущей
 #define dphi (pi/M)           
-#define qphi (1.025) // (1.0125) // (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
+//#define qphi (1.025) // (1.0125) // (1.025) // (1.02)              // можно настроить; при большом M брать близким к 1
 #define M_HALF (M / 2)           // предполагаем, что M чётное
 #define NQ (M / 4)          // M должно делиться на 4
 #define BX 16   // Размеры блока потоков  
@@ -38,17 +72,17 @@
 #define setka_q 3
 #endif
 
-#if setka_q == 3
-#if M != 256
-#error "For setka_q == 3, M must be 256"
-#endif
-#elif setka_q == 4
-#if M != 448
-#error "For setka_q == 4, M must be 448"
-#endif
-#else
-#error "Unsupported M for setka_q"
-#endif
+//#if setka_q == 3
+//#if M != 256
+//#error "For setka_q == 3, M must be 256"
+//#endif
+//#elif setka_q == 4
+//#if M != 448
+//#error "For setka_q == 4, M must be 448"
+//#endif
+//#else
+//#error "Unsupported M for setka_q"
+//#endif
 
 // Следующие определения для ядра  compute_cell_ez_and_slopes
 #define SLOPE_BX BX   // TODO(user): согласуйте с реальным блоком запуска
@@ -393,24 +427,44 @@ namespace mms {
 
     // ---------- Источники ----------
     __host__ __device__ __forceinline__
-        double S_rho(double r, double phi) {
-        double th = theta_from_phi(phi);
-        return (r + 4.0 * epsV * std::cos(th)) / (2.0 * r * r * r * r * r);
+        double S_rho(double r, double phi) 
+    {
+        double cp = std::cos(phi);
+        double sp = std::sin(phi);
+        return (0.5 * r + 0.20000000000000007 * sp + 1.3877787807814457e-17 * sin(3 * phi)) / pow(r, 5);
+        // double th = theta_from_phi(phi);
+        // return (r + 4.0 * epsV * std::cos(th)) / (2.0 * r * r * r * r * r);
     }
 
     __host__ __device__ __forceinline__
         double S_mr(double r, double phi) {
-        return 0.0;
-        double th = theta_from_phi(phi);
+        /*double th = theta_from_phi(phi);
         double s = std::sin(th);
         double s2 = s * s;
         return (r * r * (-1.0 + 2.0 * r - 8.0 * r * r)
-            + (-4.0 * epsV * epsV + 2.0 * epsB * r) * s2) / (4.0 * r * r * r * r * r * r * r);
+            + (-4.0 * epsV * epsV + 2.0 * epsB * r) * s2) / (4.0 * r * r * r * r * r * r * r);*/
+        double cp = std::cos(phi);
+        double sp = std::sin(phi);
+        return (cp * (2.0816681711721685e-17 + r * (0.0009947183943243496 + r * (-0.5001989436788649 + (1. - 2. * r) * r)) + 
+            (-1.0601848938211725e-17 + 0.09999999999999995 * r) * r * sp) + (-0.010000000000000012 + (0.002984155182973034 + 0.00019894367886485792 * r) * r) * 
+            cos(3 * phi) + 6.626155586382328e-19 * r * cos(5 * phi) + (3.533949646070575e-18 - 2.120369787642345e-17 * r) * r * sin(4 * phi)) / pow(r, 7);
     }
 
     __host__ __device__ __forceinline__
+        double S_mz(double r, double phi) {
+        double cp = std::cos(phi);
+        double sp = std::sin(phi);
+        return ((-0.1 + 0.15000000000000002 * r) * r - 0.010000000000000009 * sp - 0.05000000000000001 * 
+            pow(r, 2) * cos(2 * phi) - 0.009999999999999998 * sin(3 * phi) + r * 
+            ((0.00298415518297304 + r * (-0.49980105632113536 + (1.0000000000000007 - 2. * r) * r)) * sp + 
+                (6.938893903907228e-18 - 3.469446951953614e-18 * r) * cos(4 * phi) +
+                (0.002984155182973039 + r * (0.00019894367886494346 + (-2.220446049250313e-16 + 5.551115123125783e-17 * r) * r)) 
+                * sin(3 * phi) + (5.421010862427522e-19 - 1.3552527156068805e-20 * r) * sin(5 * phi))) / pow(r, 7);
+    }
+
+
+    __host__ __device__ __forceinline__
         double S_mtheta(double r, double phi) {
-        return 0.0;
         double th = theta_from_phi(phi);
         double st = std::sin(th);
         double ct = std::cos(th);
@@ -2070,7 +2124,7 @@ __global__ void update_Bn_from_Ez(
     double* v_Bn,            // (N+1) x M, обновляем на месте
     const double* dT)
 {
-    double DT = 0.25;  // *dT
+    double DT = 0.00001;  // *dT
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -2091,6 +2145,8 @@ __global__ void update_Bn_from_Ez(
         double phi_mid = phi1;
 
         // S_Bn для грани с фиксированным phi:
+        // Знак источника для B_r противоположен знаку для B_theta:
+        // так CT-член и источник сокращаются при стационарном MMS-решении.
         double S_Bn = -mms::S_Btheta(r_mid, phi_mid);
         
         double znamenatel = (x1 + x2) * DR(i);
@@ -2104,6 +2160,28 @@ __global__ void update_Bn_from_Ez(
 
 
         h_Bn[idx_hface(i, j + 1)] = h_Bn_posle;
+        if (false && i == 5 * N / 10 && j == M / 2)
+        {
+            double phi1 = PHI_RIGHT(j);
+            double r1_ = R_EDGE(i + 1);
+            double r2_ = R_EDGE(i);
+            double x1_ = r1_ * cos(phi1);
+            double x2_ = r2_ * cos(phi1);
+            double r_mid_ = 0.5 * (r1_ + r2_);
+            double znam_h = (x1_ + x2_) * DR(i);
+            double A1_ = slot_h_from_left[idx_node(i + 1, j + 1)];
+            double A2_ = slot_h_from_left[idx_node(i, j + 1)];
+            double CT_h = -2.0 * DT * (A2_ * x2_ - A1_ * x1_) / znam_h;
+            double S_h = -mms::S_Btheta(r_mid_, phi1);
+
+            printf("=== h-face  i = %d, j + 1 = %d  \n", i, j + 1);
+            printf("mms::B_theta(r_mid_, phi1) = %lf  \n", mms::B_theta(r_mid_, phi1));
+            printf("h_Bn[idx_hface(i,j+1)] = %lf  \n", h_Bn[idx_hface(i, j + 1)]);
+            printf("CT_h  = %lf  \n", CT_h);
+            printf("DT*S_h  = %lf  \n", DT * S_h);
+            printf("CT_h + DT*S_h  = %lf  \n", CT_h + DT * S_h);
+            printf("CT_h / (-DT*S_h)  = %lf  \n", CT_h / (-DT * S_h));
+        }
     }
 
     // --- Правая v-грань этой ячейки: v-грань(i+1, j) ---
@@ -2121,7 +2199,8 @@ __global__ void update_Bn_from_Ez(
         double r_mid = r1;
 
         // v-face normal = e_r, Bn = B_r
-        double S_Bn = -mms::S_Br(r_mid, phi_mid);
+
+        double S_Bn = mms::S_Br(r_mid, phi_mid);
 
         double znamenatel = (x1 + x2) * (DPHI(j) * r1);
         if (fabs(znamenatel) < 0.000000001) znamenatel = 1.0;
@@ -2135,6 +2214,35 @@ __global__ void update_Bn_from_Ez(
 
         //v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
         //    *dT * (slot_h_from_left[idx_node(i + 1, j + 1)] - slot_h_from_left[idx_node(i + 1, j)]) / (DPHI(j) * R_EDGE(i + 1));
+
+        if (false && i == 5 * N / 10 && j == M / 2)
+        {
+            double phi1 = PHI_LEFT(j);
+            double phi2 = PHI_RIGHT(j);
+            double r1_ = R_EDGE(i + 1);
+            double x1_ = r1_ * cos(phi1);
+            double x2_ = r1_ * cos(phi2);
+            double phi_mid_ = PHI_CENTER(j);
+            double znam_v = (x1_ + x2_) * (DPHI(j) * r1_);
+            double A1_ = slot_h_from_left[idx_node(i + 1, j)];
+            double A2_ = slot_h_from_left[idx_node(i + 1, j + 1)];
+            double CT_v = -2.0 * DT * (A2_ * x2_ - A1_ * x1_) / znam_v;
+            double S_v = -mms::S_Br(r1_, phi_mid_);
+
+            printf("=== v-face  i + 1 = %d, j = %d  \n", i + 1, j);
+            printf("mms::B_r(r1_, phi_mid_) = %lf  \n", mms::B_r(r1_, phi_mid_));
+            printf("v_Bn[idx_vface(i+1,j)] = %lf  \n", v_Bn[idx_vface(i + 1, j)]);
+            printf("CT_v   = %lf  \n", CT_v);
+            printf("DT*S_v  = %lf  \n", DT * S_v);
+            printf("CT_v + DT*S_v  = %lf  \n", CT_v + DT * S_v);
+            printf("CT_v / (-DT*S_v)  = %lf  \n", CT_v / (-DT * S_v));
+
+            printf("Alternativ -(1/r) dA/dphi  \n");
+            double CT_alt = -DT * (A2_ - A1_) / (DPHI(j) * r1_);
+            printf("CT_alt  = %lf  \n", CT_alt);
+            printf("CT_alt + DT*S_v  = %lf  \n", CT_alt + DT * S_v);
+            printf("CT_alt / (-DT*S_v)  = %lf  \n", CT_alt / (-DT * S_v));
+        }
 
     }
     else
@@ -2158,6 +2266,8 @@ __global__ void update_Bn_from_Ez(
         double h_Bn_posle = h_Bn_do - 2.0 * DT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
+
+     
 
 
         // Это для самой правой грани сетки
@@ -2209,13 +2319,14 @@ __global__ void update_cells(
     double phi = PHI_CENTER(j);
     double r = R_CENTER(i, j);
     double x = r * cos(phi);
+    double y = r * sin(phi);
 
     Bx_1 += Bx_dipole(r, phi);
     By_1 += By_dipole(r, phi);
 
     double Fx = 0.0, Fy = 0.0;
 
-    double dTime = 0.25; // *dT; // 1.0E-4; // *dT;
+    double dTime = 0.00001; // *dT; // 1.0E-4; // *dT;
 
     // Вычисляем силы
     if (false)
@@ -2311,6 +2422,7 @@ __global__ void update_cells(
 
     double Srho = mms::S_rho(r, phi);
     double Smr = mms::S_mr(r, phi);
+    double Smz = mms::S_mz(r, phi);
     double Smt = mms::S_mtheta(r, phi);
     double Smp = mms::S_mphi(r, phi);
     double SBr = mms::S_Br(r, phi);
@@ -2320,9 +2432,14 @@ __global__ void update_cells(
     double th = mms::theta_from_phi(phi);
     double st = sin(th), ct = cos(th);
 
-    double Smx = Smr * cos(phi) - (-Smt) * sin(phi); // Smr * st + Smt * ct;
-    double Smy = Smr * sin(phi) + (-Smt) * cos(phi); ; // Smr* ct - Smt * st;
-    double Smz = Smp;
+    //double Smx = Smr * cos(phi) - (-Smt) * sin(phi); // Smr * st + Smt * ct;
+    //double Smy = Smr * sin(phi) + (-Smt) * cos(phi); ; // Smr* ct - Smt * st;
+    //double Smz = Smp;
+
+    // Переход к консервативным источникам
+    /*Smx += Vx_1 * Srho;
+    Smy += Vy_1 * Srho;
+    Smz += Vz_1 * Srho;*/
 
     double SBx = SBr * st + SBt * ct;
     double SBy = SBr * ct - SBt * st;
@@ -2363,8 +2480,70 @@ __global__ void update_cells(
         P += h_Pvx[(j + 1) * N + i] * S3;  // phi+
         P -= h_Pvx[j * N + i] * S3;      // phi-
 
-        Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx + dTime * Smx) / rho_2;
+        Vx_2 = (rho_1 * Vx_1 - dTime * P / dV + dTime * (rho_1 * (kv(Vz_1) - kv(Vx_1)) + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x + dTime * Fx + dTime * Smr) / rho_2;
         Vx[idx] = Vx_2;
+
+        if (i == 10 && j == 2 * M / 3)
+        {
+            double phi = PHI_CENTER(j);
+            double r = R_CENTER(i, j);
+            double th = mms::theta_from_phi(phi);
+
+            printf("r   = %lf \n", r);
+            printf("phi = %lf \n", phi);
+            printf("th  = %lf \n", th);
+            printf("x   = %lf \n", x);
+            printf("y   = %lf \n", y);
+
+            // ---- Численные (на текущем шаге) ----
+            printf("rho_1 = %lf \n", rho_1);
+            printf("Vx_1  = %lf \n", Vx_1);
+            printf("Vy_1  = %lf \n", Vy_1);
+            printf("Vz_1  = %lf \n", Vz_1);
+            printf("Bx_1  = %lf \n", Bx_1);
+            printf("By_1  = %lf \n", By_1);
+            printf("Bz_1  = %lf \n", Bz_1);
+
+            // ---- Аналитика в центре ячейки (для сравнения) ----
+            printf("rho_a  = %lf \n", mms::rho(r, phi));
+            // printf("Vx_a   = %lf \n", mms::Vx(r, phi));  // если есть
+            // printf("Vy_a   = %lf \n", mms::Vy(r, phi));
+            printf("p_a    = %lf \n", mms::p(r, phi));
+
+            // ---- MMS-источники (уже декартовы!) ----
+            double S_rho_mms = mms::S_rho(r, phi);
+            double Sx_mms = mms::S_mr(r, phi);   // <-- это x-импульс, не сферический!
+            double Sy_mms = mms::S_mz(r, phi);   // <-- это y-импульс
+            printf("S_rho  = %lf \n", S_rho_mms);
+            printf("Sx_mms = %lf \n", Sx_mms);
+            printf("Sy_mms = %lf \n", Sy_mms);
+
+            // ---- Геометрические члены (как в схеме) ----
+            double geom_x = (rho_1 * (kv(Vz_1) - kv(Vx_1))
+                + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x;
+            double geom_y = -(rho_1 * Vx_1 * Vy_1
+                - Bx_1 * By_1 / cpi4) / x;
+            printf("geom_x = %lf \n", geom_x);
+            printf("geom_y = %lf \n", geom_y);
+
+            // ---- Численные потоки ----
+            printf("P / dV = %lf \n", P / dV);
+            printf("Fx     = %lf \n", Fx);
+            printf("Fy     = %lf \n", Fy);
+
+            // ---- Правые части, как они добавляются в схеме ----
+            double rhs_rho = P / dV + rho_1 * Vx_1 / x - S_rho_mms;
+            double rhs_x = -P / dV + geom_x + Fx + Sx_mms;
+            double rhs_y = -P / dV + geom_y + Fy + Sy_mms;
+            printf("rhs_rho = %lf \n", rhs_rho);
+            printf("rhs_x   = %lf \n", rhs_x);
+            printf("rhs_y   = %lf \n", rhs_y);
+
+            // ---- Декартовы дивергенции потоков отдельно (аналог Mathematica Div_*_cart) ----
+            // Если у вас P/dV уже равно P_x/dV (только x-часть декартовой дивергенции),
+            // то полная декартова дивергенция считается как (P_x/dV + Fx).
+            // Сверяйтесь с Mathematica-функциями Div_rho_cart, Div_mx_cart, Div_my_cart.
+        }
     }
 
     // Vy
@@ -2378,8 +2557,29 @@ __global__ void update_cells(
         P -= h_Pvy[j * N + i] * S3;      // phi-
 
        
-        Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy + dTime * Smy) / rho_2;
+        Vy_2 = (rho_1 * Vy_1 - dTime * P / dV - dTime * (rho_1 * Vx_1 * Vy_1 - Bx_1 * By_1 / cpi4) / x + dTime * Fy + dTime * Smz) / rho_2;
         Vy[idx] = Vy_2;
+
+        if (i == 10 && j == 2 * M / 3)
+        {
+            // Источники из mms:: (сферические)
+            double Smr_v = mms::S_mr(r, phi);
+            double Smt_v = mms::S_mtheta(r, phi);
+
+            // Геометрические члены — именно то, что стоит в уравнениях для Vx, Vy
+            double geom_x = (rho_1 * (kv(Vz_1) - kv(Vx_1))
+                + (kv(Bx_1) - kv(Bz_1)) / cpi4) / x;
+            double geom_y = -(rho_1 * Vx_1 * Vy_1
+                - Bx_1 * By_1 / cpi4) / x;
+
+            // P/dV и Fx, Fy — то, что реально стоит в коде
+            printf("For Vy \n");
+            printf("P / dV = %lf \n", P / dV);
+
+            // Правые части полностью
+            printf("(-P / dV + geom_x + Fx + Smr_v * st + Smt_v * ct)  = %lf \n", (-P / dV + geom_x + Fx + Smr_v * st + Smt_v * ct));
+            printf("(-P / dV + geom_y + Fy + Smr_v * ct - Smt_v * st) = %lf \n", (-P / dV + geom_y + Fy + Smr_v * ct - Smt_v * st));
+        }
     }
 
     // Vz
@@ -4081,6 +4281,51 @@ int main(void)
             count++;
         }
 
+        double L2_Bn_h = 0, norm_Bn_h = 0;
+        int count_h = 0;
+
+        for (int j = 0; j < M; j++) {
+            for (int i = 0; i < N; i++) {
+                // отступ 5 ячеек от краёв
+                if (i < 5 || i >= N - 5 || j < 5 || j >= M - 5) continue;
+
+                double phi1 = PHI_RIGHT(j);
+                double r_mid = 0.5 * (R_EDGE(i + 1) + R_EDGE(i));
+
+                double Bn_num = h_hFace.Bn[idx_hface(i, j + 1)];
+                // ВНИМАНИЕ: в вашем коде h_Bn хранит -B_theta (нормаль внутренняя)
+                double Bn_ex = -mms::B_theta(r_mid, phi1);
+
+                double d = Bn_num - Bn_ex;
+                L2_Bn_h += d * d;
+                norm_Bn_h += Bn_ex * Bn_ex;
+                count_h++;
+            }
+        }
+
+        double L2_Bn_v = 0, norm_Bn_v = 0;
+        int count_v = 0;
+
+        for (int j = 0; j < M; j++) {
+            for (int i = 0; i < N; i++) {
+                if (i < 5 || i >= N - 5 || j < 5 || j >= M - 5) continue;
+
+                double phi_mid = PHI_CENTER(j);
+                double r1 = R_EDGE(i + 1);
+
+                double Bn_num = h_vFace.Bn[idx_vface(i + 1, j)];
+                double Bn_ex = mms::B_r(r1, phi_mid);   // знак +, как мы выяснили
+
+                double d = Bn_num - Bn_ex;
+                L2_Bn_v += d * d;
+                norm_Bn_v += Bn_ex * Bn_ex;
+                count_v++;
+            }
+        }
+
+        fout6 << "L2(Bn_h) = " << sqrt(L2_Bn_h / count_h) / sqrt(norm_Bn_h / count_h) << endl;
+        fout6 << "L2(Bn_v) = " << sqrt(L2_Bn_v / count_v) / sqrt(norm_Bn_v / count_v) << endl;
+
         fout6 << "L2(rho)   = " << sqrt(L2_rho / count) / sqrt(norm_rho / count) << endl;
         fout6 << "L2(Vx)    = " << sqrt(L2_Vx / count) / sqrt(norm_Vx / count) << endl;
         fout6 << "L2(Vy)    = " << sqrt(L2_Vy / count) / sqrt(norm_Vy / count) << endl;
@@ -4088,6 +4333,145 @@ int main(void)
         fout6 << "L2(Vthe)  = " << sqrt(L2_Vthe / count) / sqrt(norm_Vthe / count) << endl;
         fout6 << "L2(Br)    = " << sqrt(L2_Br / count) / sqrt(norm_Br / count) << endl;
         fout6 << "L2(Bthe)  = " << sqrt(L2_Bthe / count) / sqrt(norm_Bthe / count) << endl;
+        
+
+        // ====================== ERROR MAPS ======================
+        ofstream fout_cells;
+        fout_cells.open("error_cells.dat");
+        fout_cells << "# i j r phi drho dVx dVy dVr dVthe dBx dBy dBr dBthe\n";
+
+        ofstream fout_faces;
+        fout_faces.open("error_faces.dat");
+        fout_faces << "# type i j r phi dBn   (type=0: h-face B_theta, type=1: v-face B_r)\n";
+
+        // ============== Max error locations + area-weighted norms ==============
+        double max_dVx = 0, max_dVthe = 0, max_dVr = 0;
+        double max_dVx_r = 0, max_dVx_phi = 0;
+        double max_dVthe_r = 0, max_dVthe_phi = 0;
+        double max_dVr_r = 0, max_dVr_phi = 0;
+
+        double L2w_Vx = 0, normw_Vx = 0;
+        double L2w_Vr = 0, normw_Vr = 0;
+        double L2w_Vthe = 0, normw_Vthe = 0;
+        double sum_w = 0;
+
+        for (int k = 0; k < K; k++) {
+            int i = k % N;
+            int j = (k - i) / N;
+
+            double phi = PHI_CENTER(j);
+            double r = R_CENTER(i, j);
+            double x = r * cos(phi);
+            double y = r * sin(phi);
+
+            double bx_num = h_cell.Bx[k] + Bx_dipole(r, phi);
+            double by_num = h_cell.By[k] + By_dipole(r, phi);
+            double bz_num = h_cell.Bz[k];
+
+            double Vr_num = (h_cell.Vx[k] * x + h_cell.Vy[k] * y) / r;
+            double Vthe_num = (h_cell.Vx[k] * y - h_cell.Vy[k] * x) / r;
+            double Br_num = (bx_num * x + by_num * y) / r;
+            double Bthe_num = (bx_num * y - by_num * x) / r;
+
+            double th = mms::theta_from_phi(phi);
+            double st = sin(th), ct = cos(th);
+
+            double rho_ex = mms::rho(r, phi);
+            double Vr_ex = mms::v_r(r, phi);
+            double Vthe_ex = mms::v_theta(r, phi);
+            double Br_ex = mms::B_r(r, phi);
+            double Bthe_ex = mms::B_theta(r, phi);
+
+            double Vx_ex = Vr_ex * st + Vthe_ex * ct;
+            double Vy_ex = Vr_ex * ct - Vthe_ex * st;
+            double Bx_ex = Br_ex * st + Bthe_ex * ct;
+            double By_ex = Br_ex * ct - Bthe_ex * st;
+
+            double drho = h_cell.rho[k] - rho_ex;
+            double dVx = h_cell.Vx[k] - Vx_ex;
+            double dVy = h_cell.Vy[k] - Vy_ex;
+            double dVr = Vr_num - Vr_ex;
+            double dVthe = Vthe_num - Vthe_ex;
+            double dBx = bx_num - Bx_ex;
+            double dBy = by_num - By_ex;
+            double dBr = Br_num - Br_ex;
+            double dBthe = Bthe_num - Bthe_ex;
+
+            // Карта ошибок по ВСЕМ ячейкам (включая границы — полезно видеть)
+            fout_cells << i << " " << j << " " << r << " " << phi << " "
+                << drho << " " << dVx << " " << dVy << " "
+                << dVr << " " << dVthe << " "
+                << dBx << " " << dBy << " "
+                << dBr << " " << dBthe << "\n";
+
+            // Далее — только внутренняя область (как в L2)
+            if (i < 5 || i >= N - 5 || j < 5 || j >= M - 5) continue;
+
+            // Max-error locations
+            if (fabs(dVx) > max_dVx) {
+                max_dVx = fabs(dVx); max_dVx_r = r; max_dVx_phi = phi;
+            }
+            if (fabs(dVthe) > max_dVthe) {
+                max_dVthe = fabs(dVthe); max_dVthe_r = r; max_dVthe_phi = phi;
+            }
+            if (fabs(dVr) > max_dVr) {
+                max_dVr = fabs(dVr); max_dVr_r = r; max_dVr_phi = phi;
+            }
+
+            // Area-weighted norms: dV = r * dr * dphi
+            double dr_cell = R_EDGE(i + 1) - R_EDGE(i);
+            double dphi_cell = DPHI(j);
+            double w = r * dr_cell * dphi_cell;
+
+            L2w_Vx += w * dVx * dVx;
+            normw_Vx += w * Vx_ex * Vx_ex;
+            L2w_Vr += w * dVr * dVr;
+            normw_Vr += w * Vr_ex * Vr_ex;
+            L2w_Vthe += w * dVthe * dVthe;
+            normw_Vthe += w * Vthe_ex * Vthe_ex;
+            sum_w += w;
+        }
+
+        // ====================== FACE ERROR MAPS ======================
+        // h-face Bn errors (B_theta)
+        for (int j = 0; j < M; j++) {
+            for (int i = 0; i < N; i++) {
+                double phi1 = PHI_RIGHT(j);
+                double r_mid = 0.5 * (R_EDGE(i + 1) + R_EDGE(i));
+                double Bn_num = h_hFace.Bn[idx_hface(i, j + 1)];
+                double Bn_ex = -mms::B_theta(r_mid, phi1);
+                fout_faces << 0 << " " << i << " " << j + 1 << " "
+                    << r_mid << " " << phi1 << " "
+                    << (Bn_num - Bn_ex) << "\n";
+            }
+        }
+
+        // v-face Bn errors (B_r)
+        for (int j = 0; j < M; j++) {
+            for (int i = 0; i < N; i++) {
+                double phi_mid = PHI_CENTER(j);
+                double r1 = R_EDGE(i + 1);
+                double Bn_num = h_vFace.Bn[idx_vface(i + 1, j)];
+                double Bn_ex = mms::B_r(r1, phi_mid);
+                fout_faces << 1 << " " << i + 1 << " " << j << " "
+                    << r1 << " " << phi_mid << " "
+                    << (Bn_num - Bn_ex) << "\n";
+            }
+        }
+
+        fout_cells.close();
+        fout_faces.close();
+
+        // ====================== ADDITIONAL DIAGNOSTICS ======================
+        fout6 << "\n--- Unweighted max errors ---\n";
+        fout6 << "max|dVx|   = " << max_dVx << " at r=" << max_dVx_r << " phi=" << max_dVx_phi << endl;
+        fout6 << "max|dVr|   = " << max_dVr << " at r=" << max_dVr_r << " phi=" << max_dVr_phi << endl;
+        fout6 << "max|dVthe| = " << max_dVthe << " at r=" << max_dVthe_r << " phi=" << max_dVthe_phi << endl;
+
+        fout6 << "\n--- Area-weighted L2 norms (weight = r*dr*dphi) ---\n";
+        fout6 << "L2_w(Vx)   = " << sqrt(L2w_Vx / sum_w) / sqrt(normw_Vx / sum_w) << endl;
+        fout6 << "L2_w(Vr)   = " << sqrt(L2w_Vr / sum_w) / sqrt(normw_Vr / sum_w) << endl;
+        fout6 << "L2_w(Vthe) = " << sqrt(L2w_Vthe / sum_w) / sqrt(normw_Vthe / sum_w) << endl;
         fout6.close();
     }
 
