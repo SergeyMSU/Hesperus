@@ -249,7 +249,7 @@
 #error "Unsupported VERSION"
 #endif
 
-#define eps_c 0.1   // Множитель в функции охлаждения, как в статьях ud-Doula
+#define eps_c 10.0   // Множитель в функции охлаждения, как в статьях ud-Doula
 
 //#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
 
@@ -3097,6 +3097,7 @@ int main(void)
     cout << "eta = " << kv(Bo_init / 2.0) / (4.0 * pi) << endl;
     cout << "W = " << V_phi_init * sqrt(2.0) << endl;
     cout << "method_rieman = " << method_rieman << endl;
+    cout << "eps_c = " << eps_c << endl;
     // "save_zOph_1(350x256).bin" - чисто газодинамическое решение без вращения
     // "save_zOph_2(350x256).bin" - МГД решение (B0 = 0.45542) без вращения
     // "save_zOph_3(350x256).bin" - МГД решение (B0 = 0.45542) с вращением
@@ -3110,7 +3111,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_eta10-eps001-W00.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps10-W00.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
