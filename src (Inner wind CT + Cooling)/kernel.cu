@@ -29,10 +29,10 @@
 //#define qphi 1.050625
 
 // 620 x 256
-//#define N 620
-//#define M 256
-//#define qb 1.01
-//#define qphi 1.025
+#define N 620
+#define M 256
+#define qb 1.01
+#define qphi 1.025
 
 // 1240 x 512
 //#define N 1240
@@ -41,10 +41,10 @@
 //#define qphi 1.012422836565829
 
 // 2480 x 1024
-#define N 2480
-#define M 1024
-#define qb 1.0024906795078
-#define qphi 1.0061922463256
+//#define N 2480
+//#define M 1024
+//#define qb 1.0024906795078
+//#define qphi 1.0061922463256
 
 
 
@@ -1907,7 +1907,8 @@ __global__ void compute_fluxes(
 
 
 // Функция расчёта Ez на всех узлах (кроме граничных). Но она сохраняет значения в 4 массива
-__global__ void compute_cell_ez_and_slopes(
+// этот вариант находит производную первым порядком
+__global__ void compute_cell_ez_and_slopes2(
     const double* Vx, const double* Vy, const double* Bx, const double* By,
     //double* Ez_cell,                          // выход: N*M, тоже нужен снаружи (например для диагностики)
     const double* h_Pbx, const double* h_Pby, const double* h_SL, const double* h_SR,   // грани, N x (M+1)
@@ -2059,6 +2060,239 @@ __global__ void compute_cell_ez_and_slopes(
 
     }
 
+
+    // x_C = 0, x_L = -a, x_R = +b, a > 0, b > 0
+// возвращает f'(0) для квадратичной параболы через fL, fC, fR
+    __device__ double deriv_3pt_nonuniform(double fL, double fC, double fR,
+        double a, double b)
+    {
+        const double den = a + b;
+        return -b / (a * den) * fL
+            + (b - a) / (a * b) * fC
+            + a / (b * den) * fR;
+    }
+
+    __device__ double deriv2_3pt_nonuniform(double fL, double fC, double fR,
+        double a, double b)
+    {
+        // коэффициент при f'' в параболе через три точки
+        return 2.0 * (b * fL + a * fR - (a + b) * fC) / (a * b * (a + b));
+    }
+
+
+    // Функция расчёта Ez на всех узлах (кроме граничных). Но она сохраняет значения в 4 массива
+    __global__ void compute_cell_ez_and_slopes(
+        const double* Vx, const double* Vy, const double* Bx, const double* By,
+        //double* Ez_cell,                          // выход: N*M, тоже нужен снаружи (например для диагностики)
+        const double* h_Pbx, const double* h_Pby, const double* h_SL, const double* h_SR,   // грани, N x (M+1)
+        const double* v_Pbx, const double* v_Pby, const double* v_SL, const double* v_SR,   // грани, (N+1) x M
+        double* slot_h_from_left,   // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
+        double* slot_h_from_right,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i,   j+1)
+        double* slot_v_from_below,  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j+1)
+        double* slot_v_from_above)  // (N+1)x(M+1), пишет ячейка (i,j) в узел (i+1, j)
+    {
+        __shared__ double sh_Ez[SLOPE_SHARED_I][SLOPE_SHARED_J];  // Ez в центрах ячеек - проще один раз посчитать и засунуть в shared
+
+        int tx = threadIdx.x;
+        int ty = threadIdx.y;
+        int i_start = blockIdx.x * SLOPE_BX;
+        int j_start = blockIdx.y * SLOPE_BY;
+
+        int i = i_start + tx;
+        int j = j_start + ty;
+
+        // --- 1. Каждый поток считает Ez_cell для СВОЕЙ ячейки (включая один halo-слой) ---
+        // Загружаем блок (SLOPE_BX+2) x (SLOPE_BY+2) ячеек Ez_cell в shared.
+        {
+            int total_load = SLOPE_SHARED_I * SLOPE_SHARED_J;
+            int tid = tx + ty * SLOPE_BX;
+            for (int k = tid; k < total_load; k += SLOPE_BX * SLOPE_BY)
+            {
+                int il = k / SLOPE_SHARED_J;
+                int jl = k % SLOPE_SHARED_J;
+                int ig = i_start - 1 + il;
+                int jg = j_start - 1 + jl;
+
+                double ez;
+                if (ig >= 0 && ig < N && jg >= 0 && jg < M)
+                {
+                    ez = compute_Ez_cell(Vx[idx_cell(ig, jg)], Vy[idx_cell(ig, jg)],
+                        Bx[idx_cell(ig, jg)] + Bx_dipole(R_CENTER(ig, jg), PHI_CENTER(jg)), By[idx_cell(ig, jg)] + By_dipole(R_CENTER(ig, jg), PHI_CENTER(jg)));
+                }
+                else
+                {
+                    int ic = min(max(ig, 0), N - 1);
+                    int jc = min(max(jg, 0), M - 1);
+                    ez = compute_Ez_cell(Vx[idx_cell(ic, jc)], Vy[idx_cell(ic, jc)],
+                        Bx[idx_cell(ic, jc)] + Bx_dipole(R_CENTER(ic, jc), PHI_CENTER(jc)), By[idx_cell(ic, jc)] + By_dipole(R_CENTER(ic, jc), PHI_CENTER(jc)));
+                }
+                sh_Ez[il][jl] = ez;
+            }
+        }
+        __syncthreads();
+
+        if (i > N || j >= M) return;
+
+        int il = tx + 1;  // локальный индекс своей ячейки в shared (с учётом halo=1)
+        int jl = ty + 1;
+
+        // Записываем Ez_cell в выходной массив (пригодится для отладки/других нужд)
+        //Ez_cell[idx_cell(i, j)] = ez_here;
+
+        // ---------------------------------------------------------------------
+        // A) ВЕРХНЯЯ h-грань этой ячейки = h-грань(i, j+1)
+        // для самой верхней грани этим можно не заниматься, так как для оси симметрии Ez = 0
+        if (j < M - 1)
+        {
+            double phi_g = PHI_RIGHT(j);
+            double ez_face = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) + h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
+            double SL = h_SL[idx_hface(i, j + 1)];
+            double SR = h_SR[idx_hface(i, j + 1)];
+
+            // Считаем Ez на вертикальных гранях для этой и соседней ячейки (чтобы снести в узлы)
+
+            phi_g = PHI_CENTER(j);
+            double ez_face_DL = -(-v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g)); // Нижняя левая
+            double ez_face_DR = -(-v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g)); // Нижняя правая
+            phi_g = PHI_CENTER(j + 1);
+            double ez_face_UL = -(-v_Pbx[idx_vface(i, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i, j + 1)] * cos(phi_g)); // Верхняя левая
+            double ez_face_UR = -(-v_Pbx[idx_vface(i + 1, j + 1)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j + 1)] * cos(phi_g)); // Верхняя правая
+
+            // ---- нижняя ячейка j: производная по r в центре ячейки ----
+            double a_below = R_CENTER(i, j) - R_EDGE(i);       // расстояние центр -> левый узел
+            double b_below = R_EDGE(i + 1) - R_CENTER(i, j);   // расстояние центр -> правый узел
+
+            double dEzdr_below = deriv_3pt_nonuniform(ez_face_DL, sh_Ez[il][jl], ez_face_DR, a_below, b_below);
+            double corrL_below = -a_below * dEzdr_below;       // снос в левый узел
+            double corrR_below = b_below * dEzdr_below;       // снос в правый узел
+
+            // ---- верхняя ячейка j+1: производная по r в её центре ----
+            double a_above = R_CENTER(i, j + 1) - R_EDGE(i);
+            double b_above = R_EDGE(i + 1) - R_CENTER(i, j + 1);
+
+            double dEzdr_above = deriv_3pt_nonuniform(ez_face_UL, sh_Ez[il][jl + 1], ez_face_UR, a_above, b_above);
+
+            double corrL_above = -a_above * dEzdr_above;
+            double corrR_above = b_above * dEzdr_above;
+
+            // ---- HLL-смешивание уже поправок ----
+            slot_h_from_right[idx_node(i, j + 1)] =
+                ez_face + hll_blend(corrL_below, corrL_above, SL, SR);
+
+            slot_h_from_left[idx_node(i + 1, j + 1)] =
+                ez_face + hll_blend(corrR_below, corrR_above, SL, SR);
+        }
+
+        // ---------------------------------------------------------------------
+        // B) ПРАВАЯ v-грань этой ячейки = v-грань(i+1, j)
+        if (i < N - 1)
+        {
+            double phi_g = PHI_CENTER(j);
+            double ez_face = -(-v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) +
+                v_Pby[idx_vface(i + 1, j)] * cos(phi_g));
+            double SL = v_SL[idx_vface(i + 1, j)];
+            double SR = v_SR[idx_vface(i + 1, j)];
+
+            // Ez на горизонтальных гранях соседних ячеек
+            phi_g = PHI_RIGHT(j - 1);
+            double ez_face_LD = (h_Pbx[idx_hface(i, j)] * cos(phi_g) +
+                h_Pby[idx_hface(i, j)] * sin(phi_g));
+            double ez_face_RD = (h_Pbx[idx_hface(i + 1, j)] * cos(phi_g) +
+                h_Pby[idx_hface(i + 1, j)] * sin(phi_g));
+
+            phi_g = PHI_RIGHT(j);
+            double ez_face_LU = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) +
+                h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
+            double ez_face_RU = (h_Pbx[idx_hface(i + 1, j + 1)] * cos(phi_g) +
+                h_Pby[idx_hface(i + 1, j + 1)] * sin(phi_g));
+
+            // расстояния по phi в угловых единицах
+            double a_phi = PHI_CENTER(j) - PHI_RIGHT(j - 1); // центр -> нижний узел
+            double b_phi = PHI_RIGHT(j) - PHI_CENTER(j);    // центр -> верхний узел
+
+            // ---- левая ячейка i ----
+            double dEzdphi_below = deriv_3pt_nonuniform(ez_face_LD,
+                sh_Ez[il][jl],
+                ez_face_LU,
+                a_phi, b_phi);
+
+            double Rc_below = R_CENTER(i, j);
+            double Rn = R_EDGE(i + 1);   // радиус v-грани
+
+            // если сохранить старую нормировку без метрики: double scale_below = 1.0;
+            double scale_below = Rn / Rc_below;
+
+            double corrU_below = scale_below * b_phi * dEzdphi_below; // в верхний узел
+            double corrD_below = -scale_below * a_phi * dEzdphi_below; // в нижний узел
+
+            // ---- правая ячейка i+1 ----
+            double dEzdphi_above = deriv_3pt_nonuniform(ez_face_RD,
+                sh_Ez[il + 1][jl],
+                ez_face_RU,
+                a_phi, b_phi);
+
+            double Rc_above = R_CENTER(i + 1, j);
+            // если сохранить старую нормировку без метрики: double scale_above = 1.0;
+            double scale_above = Rn / Rc_above;
+
+            double corrU_above = scale_above * b_phi * dEzdphi_above;
+            double corrD_above = -scale_above * a_phi * dEzdphi_above;
+
+            // ---- HLL-смешивание поправок ----
+            slot_v_from_below[idx_node(i + 1, j + 1)] =
+                ez_face + hll_blend(corrU_below, corrU_above, SL, SR);
+
+            slot_v_from_above[idx_node(i + 1, j)] =
+                ez_face + hll_blend(corrD_below, corrD_above, SL, SR);
+        }
+        else
+        {
+            double phi_g = PHI_CENTER(j);
+            double ez_face = -(-v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) +
+                v_Pby[idx_vface(i + 1, j)] * cos(phi_g));
+
+            phi_g = PHI_RIGHT(j - 1);
+            double ez_face_LD = (h_Pbx[idx_hface(i, j)] * cos(phi_g) +
+                h_Pby[idx_hface(i, j)] * sin(phi_g));
+
+            phi_g = PHI_RIGHT(j);
+            double ez_face_LU = (h_Pbx[idx_hface(i, j + 1)] * cos(phi_g) +
+                h_Pby[idx_hface(i, j + 1)] * sin(phi_g));
+
+            double a_phi = PHI_CENTER(j) - PHI_RIGHT(j - 1);
+            double b_phi = PHI_RIGHT(j) - PHI_CENTER(j);
+
+            double dEzdphi = deriv_3pt_nonuniform(ez_face_LD,
+                sh_Ez[il][jl],
+                ez_face_LU,
+                a_phi, b_phi);
+
+            double Rn = R_EDGE(i + 1);
+            double Rc = R_CENTER(i, j);
+
+            // если сохранить старую нормировку без метрики: double scale = 1.0;
+            double scale = Rn / Rc;
+
+            double corrU = scale * b_phi * dEzdphi;
+            double corrD = -scale * a_phi * dEzdphi;
+
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + corrU;
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face + corrD;
+        }
+
+        // Левая v-грань у поверхности звезды
+        //if (i == 0)
+        //{
+        //    double phi_g = PHI_CENTER(j);
+        //    double ez_face = -(-v_Pbx[idx_vface(i, j)] * sin(phi_g) + v_Pby[idx_vface(i, j)] * cos(phi_g));
+        //    slot_v_from_below[idx_node(i, j + 1)] = ez_face;
+        //    slot_v_from_above[idx_node(i, j)] = ez_face;
+        //}
+
+
+    }
+
+
     // Ядро, суммирующее Ez для каждого узла (в массив slot_h_from_left) - кроме самых правых узлов (для них надо снести с левого соседа)
     __global__ void assemble_node_ez(
         double* slot_h_from_left,
@@ -2084,6 +2318,28 @@ __global__ void compute_cell_ez_and_slopes(
         }
         else
         {
+            // Часть с учётом расстояния плохо работает, потому что простое усреднение сокращает ошибки
+            // --- для узла nd = idx_node(i+1, j+1) ---
+            // расстояния от граней до узла (r-направление для h, дуга для v)
+            //double dr_L = 0.5 * (R_EDGE(i + 1) - R_EDGE(i));       // h-грань SW-ячейки
+            //double dr_R = 0.5 * (R_EDGE(i + 2) - R_EDGE(i + 1));     // h-грань SE-ячейки
+            //double darc_D = 0.5 * R_EDGE(i + 1) * (PHI_RIGHT(j) - PHI_RIGHT(j - 1)); // v-грань SW-ячейки
+            //double darc_U = 0.5 * R_EDGE(i + 1) * (PHI_RIGHT(j + 1) - PHI_RIGHT(j));   // v-грань NW-ячейки
+
+            //double dr = (dr_L + dr_R) / 2.0;
+            //double darc = (darc_D + darc_U) / 2.0;
+
+            //double w_L = 1.0 / kv(dr);
+            //double w_R = 1.0 / kv(dr);
+            //double w_D = 1.0 / kv(darc);
+            //double w_U = 1.0 / kv(darc);
+            //double w_sum = w_L + w_R + w_D + w_U;
+
+            //slot_h_from_left[nd] = (w_L * slot_h_from_left[nd]
+            //    + w_R * slot_h_from_right[nd]
+            //    + w_D * slot_v_from_below[nd]
+            //    + w_U * slot_v_from_above[nd]) / w_sum;
+
             slot_h_from_left[nd] = 0.25 * (slot_h_from_left[nd] + slot_h_from_right[nd]
                 + slot_v_from_below[nd] + slot_v_from_above[nd]);
 
@@ -2266,9 +2522,6 @@ __global__ void update_Bn_from_Ez(
         double h_Bn_posle = h_Bn_do - 2.0 * DT * (A2 * x2 - A1 * x1) / (znamenatel);
         //double h_Bn_posle = h_Bn_do - *dT * (A2 - A1) / (DPHI(j) * R_EDGE(i + 1));
         v_Bn[idx_vface(i + 1, j)] = h_Bn_posle;
-
-     
-
 
         // Это для самой правой грани сетки
         // v_Bn[idx_vface(i + 1, j)] = v_Bn[idx_vface(i + 1, j)] -
@@ -4398,11 +4651,11 @@ int main(void)
             double dBthe = Bthe_num - Bthe_ex;
 
             // Карта ошибок по ВСЕМ ячейкам (включая границы — полезно видеть)
-            fout_cells << i << " " << j << " " << r << " " << phi << " "
-                << drho << " " << dVx << " " << dVy << " "
-                << dVr << " " << dVthe << " "
-                << dBx << " " << dBy << " "
-                << dBr << " " << dBthe << "\n";
+            //fout_cells << i << " " << j << " " << r << " " << phi << " "
+            //    << drho << " " << dVx << " " << dVy << " "
+            //    << dVr << " " << dVthe << " "
+            //    << dBx << " " << dBy << " "
+            //    << dBr << " " << dBthe << "\n";
 
             // Далее — только внутренняя область (как в L2)
             if (i < 5 || i >= N - 5 || j < 5 || j >= M - 5) continue;
@@ -4440,22 +4693,22 @@ int main(void)
                 double r_mid = 0.5 * (R_EDGE(i + 1) + R_EDGE(i));
                 double Bn_num = h_hFace.Bn[idx_hface(i, j + 1)];
                 double Bn_ex = -mms::B_theta(r_mid, phi1);
-                fout_faces << 0 << " " << i << " " << j + 1 << " "
-                    << r_mid << " " << phi1 << " "
-                    << (Bn_num - Bn_ex) << "\n";
+                //fout_faces << 0 << " " << i << " " << j + 1 << " "
+                //    << r_mid << " " << phi1 << " "
+                //    << (Bn_num - Bn_ex) << "\n";
             }
         }
 
         // v-face Bn errors (B_r)
         for (int j = 0; j < M; j++) {
             for (int i = 0; i < N; i++) {
-                double phi_mid = PHI_CENTER(j);
-                double r1 = R_EDGE(i + 1);
-                double Bn_num = h_vFace.Bn[idx_vface(i + 1, j)];
-                double Bn_ex = mms::B_r(r1, phi_mid);
-                fout_faces << 1 << " " << i + 1 << " " << j << " "
-                    << r1 << " " << phi_mid << " "
-                    << (Bn_num - Bn_ex) << "\n";
+                //double phi_mid = PHI_CENTER(j);
+                //double r1 = R_EDGE(i + 1);
+                //double Bn_num = h_vFace.Bn[idx_vface(i + 1, j)];
+                //double Bn_ex = mms::B_r(r1, phi_mid);
+                //fout_faces << 1 << " " << i + 1 << " " << j << " "
+                //    << r1 << " " << phi_mid << " "
+                //    << (Bn_num - Bn_ex) << "\n";
             }
         }
 
@@ -4475,7 +4728,7 @@ int main(void)
         fout6.close();
     }
 
-    Print_results_2D(-1, 0.0, h_cell);
+    //Print_results_2D(-1, 0.0, h_cell);
 
 
     // Печатаем 1д файл по r экватор
