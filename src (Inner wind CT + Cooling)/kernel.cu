@@ -249,7 +249,7 @@
 #error "Unsupported VERSION"
 #endif
 
-#define eps_c 1.0   // Множитель в функции охлаждения, как в статьях ud-Doula
+#define eps_c 0.1   // Множитель в функции охлаждения, как в статьях ud-Doula
 
 //#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
 
@@ -272,7 +272,7 @@
 // Для Ud-Doula (там eta другая - посчитанная по параметрам на бесконечности
 #define Bo_init (25.9481)
 // 25.9481 - для eta = 10
-// 92.7411 - для eta = 100
+// ?  92.7411 - для eta = 100
 
 
 #define phi_init 1.3 // (0.785409) // 0.582751 // (pi/2.0) // 0.797285  // смена гран условий по углу
@@ -433,10 +433,30 @@ __device__ double VanLier(double x, double y)
     return minmod((x + y)/2.0, 2.0 * minmod(x, y));
 }
 
+//__host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
+//{
+//    double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
+//    return  (d * (y - x2) + t2);
+//}
+
 __host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
 {
-    double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
-    return  (d * (y - x2) + t2);
+    double hL = x2 - x1;
+    double hR = x3 - x2;
+    double a = (t2 - t1) / hL;              // левый наклон
+    double b = (t3 - t2) / hR;              // правый наклон
+    double dc = (a * hR + b * hL) / (hL + hR);   // наклон параболы через 3 точки, в x2
+
+    // MC-лимитер: minmod3(dc, 2a, 2b)
+    double d;
+    if (dc > 0.0 && 2.0 * a > 0.0 && 2.0 * b > 0.0)
+        d = fmin(dc, fmin(2.0 * a, 2.0 * b));
+    else if (dc < 0.0 && 2.0 * a < 0.0 && 2.0 * b < 0.0)
+        d = fmax(dc, fmax(2.0 * a, 2.0 * b));
+    else
+        d = 0.0;
+
+    return t2 + d * (y - x2);
 }
 
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
@@ -449,6 +469,7 @@ __device__ void linear2(double x1, double t1, double x2, double t2, double x3, d
     //printf("%lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf | %lf \n", x1, t1, x2, t2, x3, t3, y1, y2, A, B);
     return;
 }
+
 
 // WENO-Z3 для геометрической сетки x_{i+1}/x_i = d = const.
 // Внутри переходит к xi = ln(x), где сетка равномерна.
@@ -1515,16 +1536,16 @@ __global__ void compute_fluxes(
                 int idx_h = j * (N + 1) + (i + 1);
 
                 // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
-                //{
-                //    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
-                //    double Br = v_Bn[idx_h];
-                //    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+                {
+                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                    double Br = v_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
 
-                //    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
-                //    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
-                //}
+                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
 
                 // Добавляем фоновое дипольное поле
                 {
@@ -1847,6 +1868,11 @@ __global__ void compute_cell_ez_and_slopes(
 
             // Считаем Ez на горизонтальных гранях для этой и соседней ячейки (чтобы снести в узлы)
 
+                // FIX: метрический скейлинг для сноса по phi
+            double R_face = R_EDGE(i + 1);
+            double scale_L = R_face / R_CENTER(i, j);       // левая ячейка
+            double scale_R = R_face / R_CENTER(i + 1, j);   // правая ячейка
+
             phi_g = PHI_RIGHT(j - 1);
             double ez_face_LD = (h_Pbx[idx_hface(i, j)] * cos(phi_g) + h_Pby[idx_hface(i, j)] * sin(phi_g)); // Нижняя левая
             double ez_face_RD = (h_Pbx[idx_hface(i + 1, j)] * cos(phi_g) + h_Pby[idx_hface(i + 1, j)] * sin(phi_g)); // Верхняя левая
@@ -1858,7 +1884,7 @@ __global__ void compute_cell_ez_and_slopes(
             // Хотим сносить в верхний узел на грани
             double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
             double d_above = (ez_face_RU - sh_Ez[il + 1][jl]);
-            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + hll_blend(d_below, d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + hll_blend(scale_L * d_below, scale_R * d_above, SL, SR); // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в нижний узел на грани
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
@@ -1870,6 +1896,9 @@ __global__ void compute_cell_ez_and_slopes(
             double phi_g = PHI_CENTER(j);
             double ez_face = -(-v_Pbx[idx_vface(i + 1, j)] * sin(phi_g) + v_Pby[idx_vface(i + 1, j)] * cos(phi_g));
 
+            // FIX: метрический скейлинг для сноса по phi
+            double scale_L = R_EDGE(i + 1) / R_CENTER(i, j);
+
             // Считаем Ez на горизонтальных гранях для этой и соседней ячейки (чтобы снести в узлы)
 
             phi_g = PHI_RIGHT(j - 1);
@@ -1880,11 +1909,11 @@ __global__ void compute_cell_ez_and_slopes(
 
             // Хотим сносить в верхний узел на грани
             double d_below = (ez_face_LU - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
-            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_below[idx_node(i + 1, j + 1)] = ez_face + scale_L * d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
 
             // Хотим сносить в нижний узел на грани
             d_below = (ez_face_LD - sh_Ez[il][jl]);     // Это как бы производная но БЕЗ деления на расстояние, потому что потом на него всё-равно умножать
-            slot_v_from_above[idx_node(i + 1, j)] = ez_face + d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
+            slot_v_from_above[idx_node(i + 1, j)] = ez_face + scale_L * d_below; // Здесь тоже нет умножения на расстояние так как они одинаковые
         }
 
         // Левая v-грань у поверхности звезды
@@ -2384,7 +2413,9 @@ __global__ void update_cells(
             double A = pi * r * DPHI(j) * (r * cos(phi1) + r * cos(phi2));*/
 
             //Br_center = (Br_left * x1 + Br_right * x2) / (2.0 * x);
-            Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+            // 
+            //Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+            Br_center = (Br_left * r1 + Br_right * r2) / (2.0 * r);
 
 
             //double d_right = R_EDGE(i + 1) - R_CENTER(i, j);
@@ -3079,7 +3110,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_eta10-eps01-W00.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps001-W00.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -3828,12 +3859,15 @@ int main(void)
                     double Br = bx * cos(phi) + by * sin(phi);
                     double Bthe = -bx * sin(phi) + by * cos(phi);
 
-                    E_kin_r += dV * 0.5 * rho * kv(Vr);
-                    E_kin_the += dV * 0.5 * rho * kv(Vthe);
-                    E_kin_phi += dV * 0.5 * rho * kv(vz);
-                    E_th += dV * p / (ggg - 1.0);
-					E_B_pole = dV * (kv(Br) + kv(Bthe)) / (8.0 * pi);
-                    E_B_phi = dV * (kv(bz)) / (8.0 * pi);
+                    if (r < 3.0)
+                    {
+                        E_kin_r += dV * 0.5 * rho * kv(Vr);
+                        E_kin_the += dV * 0.5 * rho * kv(Vthe);
+                        E_kin_phi += dV * 0.5 * rho * kv(vz);
+                        E_th += dV * p / (ggg - 1.0);
+                        E_B_pole = dV * (kv(Br) + kv(Bthe)) / (8.0 * pi);
+                        E_B_phi = dV * (kv(bz)) / (8.0 * pi);
+                    }
 
                     double a = fabs(phi);
                     if (a <= 20.0 * pi / 180.0)
