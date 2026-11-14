@@ -29,16 +29,16 @@
 //#define qphi 1.050625
 
 // 620 x 256
-#define N 620
-#define M 256
-#define qb 1.01
-#define qphi 1.025
+//#define N 620
+//#define M 256
+//#define qb 1.01
+//#define qphi 1.025
 
 // 1240 x 512
-//#define N 1240
-//#define M 512
-//#define qb 1.004987562112089
-//#define qphi 1.012422836565829
+#define N 1240
+#define M 512
+#define qb 1.004987562112089
+#define qphi 1.012422836565829
 
 // 2480 x 1024
 //#define N 2480
@@ -1701,16 +1701,16 @@ __global__ void compute_fluxes(
                 int idx_h = j * (N + 1) + (i + 1);
 
                 // Надо будет ещё подпроавить Bn в ячейке из Bn на грани, посчитанный через CT
-                //{
-                //    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
-                //    double Br = v_Bn[idx_h];
-                //    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
+                {
+                    double Bphi = -Bx_L * sin(phi_g) + By_L * cos(phi_g);
+                    double Br = v_Bn[idx_h];
+                    Bx_L = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_L = Br * sin(phi_g) + Bphi * cos(phi_g);
 
-                //    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
-                //    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
-                //    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
-                //}
+                    Bphi = -Bx_R * sin(phi_g) + By_R * cos(phi_g);
+                    Bx_R = Br * cos(phi_g) - Bphi * sin(phi_g);
+                    By_R = Br * sin(phi_g) + Bphi * cos(phi_g);
+                }
 
                 // Добавляем фоновое дипольное поле
                 {
@@ -2749,11 +2749,11 @@ __global__ void update_cells(
 
         ppp = P;
 
-        // rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x) + dTime * Srho;
-        double v_r_1 = Vx_1* cos(phi) + Vy_1 * sin(phi);
-        double v_theta_1 = Vx_1 * sin(phi) - Vy_1 * cos(phi);
-        double geo_rho = rho_1 * (v_r_1 / r + v_theta_1 * tan(phi) / r);
-        rho_2 = rho_1 - dTime * (P / dV + geo_rho) + dTime * Srho;
+         rho_2 = rho_1 - dTime * (P / dV + rho_1 * Vx_1 / x) + dTime * Srho;
+        //double v_r_1 = Vx_1* cos(phi) + Vy_1 * sin(phi);
+        //double v_theta_1 = Vx_1 * sin(phi) - Vy_1 * cos(phi);
+        //double geo_rho = rho_1 * (v_r_1 / r + v_theta_1 * tan(phi) / r);
+        //rho_2 = rho_1 - dTime * (P / dV + geo_rho) + dTime * Srho;
 
         rho[idx] = rho_2;
     }
@@ -2921,7 +2921,8 @@ __global__ void update_cells(
             double r2 = R_EDGE(i + 1);
             double x2 = r2 * cos(phi2);
 
-            Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+            //Br_center = (Br_left * kv(r1) + Br_right * kv(r2)) / (2.0 * kv(r));
+            Br_center = (Br_left * r1 + Br_right * r2) / (2.0 * r);
         }
 
         // --- Bphi из горизонтальных (нижней и верхней) граней ---
