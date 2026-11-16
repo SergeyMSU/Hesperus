@@ -249,7 +249,7 @@
 #error "Unsupported VERSION"
 #endif
 
-#define eps_c 10.0   // Множитель в функции охлаждения, как в статьях ud-Doula
+#define eps_c 0.1   // Множитель в функции охлаждения, как в статьях ud-Doula
 
 //#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
 
@@ -279,7 +279,7 @@
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
 // W/sqrt(2.0)
-#define V_phi_init (0.0/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.5/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -433,31 +433,33 @@ __device__ double VanLier(double x, double y)
     return minmod((x + y)/2.0, 2.0 * minmod(x, y));
 }
 
-//__host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
-//{
-//    double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
-//    return  (d * (y - x2) + t2);
-//}
-
 __host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
 {
-    double hL = x2 - x1;
-    double hR = x3 - x2;
-    double a = (t2 - t1) / hL;              // левый наклон
-    double b = (t3 - t2) / hR;              // правый наклон
-    double dc = (a * hR + b * hL) / (hL + hR);   // наклон параболы через 3 точки, в x2
-
-    // MC-лимитер: minmod3(dc, 2a, 2b)
-    double d;
-    if (dc > 0.0 && 2.0 * a > 0.0 && 2.0 * b > 0.0)
-        d = fmin(dc, fmin(2.0 * a, 2.0 * b));
-    else if (dc < 0.0 && 2.0 * a < 0.0 && 2.0 * b < 0.0)
-        d = fmax(dc, fmax(2.0 * a, 2.0 * b));
-    else
-        d = 0.0;
-
-    return t2 + d * (y - x2);
+    double d = minmod((t1 - t2) / (x1 - x2), (t2 - t3) / (x2 - x3));
+    return  (d * (y - x2) + t2);
 }
+
+
+// Этот ограничитель не работает на реальной задаче
+//__host__ __device__ double linear(double x1, double t1, double x2, double t2, double x3, double t3, double y)
+//{
+//    double hL = x2 - x1;
+//    double hR = x3 - x2;
+//    double a = (t2 - t1) / hL;              // левый наклон
+//    double b = (t3 - t2) / hR;              // правый наклон
+//    double dc = (a * hR + b * hL) / (hL + hR);   // наклон параболы через 3 точки, в x2
+//
+//    // MC-лимитер: minmod3(dc, 2a, 2b)
+//    double d;
+//    if (dc > 0.0 && 2.0 * a > 0.0 && 2.0 * b > 0.0)
+//        d = fmin(dc, fmin(2.0 * a, 2.0 * b));
+//    else if (dc < 0.0 && 2.0 * a < 0.0 && 2.0 * b < 0.0)
+//        d = fmax(dc, fmax(2.0 * a, 2.0 * b));
+//    else
+//        d = 0.0;
+//
+//    return t2 + d * (y - x2);
+//}
 
 __device__ void linear2(double x1, double t1, double x2, double t2, double x3, double t3, double y1, double y2,//
     double& A, double& B)
@@ -3111,7 +3113,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_eta10-eps10-W00.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps001-W05.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
