@@ -249,7 +249,6 @@
 #error "Unsupported VERSION"
 #endif
 
-#define eps_c 0.1   // Множитель в функции охлаждения, как в статьях ud-Doula
 
 //#define rho_cgs (1.07937E-15) // (1.07937E-15) // (2.76383E-13)    // Характреная плотнсоть в сгс
 
@@ -279,7 +278,7 @@
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
 // W/sqrt(2.0)
-#define V_phi_init (0.5/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.0/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -3113,7 +3112,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_eta10-eps001-W05.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps10-W00.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
