@@ -278,7 +278,7 @@
 
 // 0.0707249    0.176814  0.282974  0.35408  0.424896
 // W/sqrt(2.0)
-#define V_phi_init (0.0/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
+#define V_phi_init (0.5/sqrt(2.0)) // (0.424896)  // (0.176814)   //   Скорость вращения звезды
 
 
 #define snos_rho_by_rr (true)   // = 1
@@ -1739,10 +1739,10 @@ __global__ void compute_fluxes(
         }
     }
 
-    atomicMinDouble(dT, tmin);
+    //atomicMinDouble(dT, tmin);
 
     // Найдём минимальное время
-    if (false)
+    if (true)
     {
         // 1. Редукция внутри блока
         int tid = tx + ty * BX;
@@ -3112,7 +3112,7 @@ int main(void)
     string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name1 = "save_Q3_1_0.bin";   // Откуда скачиваем сетку
     //string name2 = "save_W_5_1.bin";   // Куда сохраняем сетку
-    string name2 = "save_eta10-eps10-W00.bin";   // Куда сохраняем сетку
+    string name2 = "save_eta10-eps0001-W05.bin";   // Куда сохраняем сетку
     double Mass_rashod_razmer = 1.0; //  0.0020847; // 0.533803;
 #elif VERSION == 2
     string name1 = "save_Q3_4_0.bin";   // Откуда скачиваем сетку
@@ -3138,6 +3138,7 @@ int main(void)
     double period_print3 = 0.2777777777777777; // Частота записи X-ray: APEC в часах
     // 2 ks = 0.55555555555
     // 1 ks = 0.2777777777777777
+    double period_print4 = 20.0; // Частота сохранения результатов в .bin формат
     double time_razmer = 5.2747;
     //double Mass_rashod_razmer = 0.0020847; //  0.0020847; // 0.533803;
 
@@ -3553,6 +3554,7 @@ int main(void)
     int num_ = 0;
     int num2_ = 0;
     int num3_ = 0;
+    int num4_ = 0;
 
     num_ = (int)(host_all_T * time_razmer / period_print);
     if (num_ < 0) num_ = 0;
@@ -3562,6 +3564,9 @@ int main(void)
 
     num3_ = (int)(host_all_T * time_razmer / period_print3);
     if (num3_ < 0) num3_ = 0;
+
+    num4_ = (int)(host_all_T * time_razmer / period_print4);
+    if (num4_ < 0) num4_ = 0;
 
     std::ofstream out_rashod("rashod_" + name2, std::ios::app);
     std::ofstream out_APEC("APEC_" + name2);   // # t[hour]  r[R_*]  L(r, t)[erg / s] < -out_APEC
@@ -3907,7 +3912,7 @@ int main(void)
 
 
         // Сохраняем результат в .bin
-        if (save_setka && step_ % 500000 == 0 && step_ > 10)
+        if (host_all_T * time_razmer > period_print4 * num4_)
         {
             // Копируем обратно на хост
             if (true)
@@ -3926,7 +3931,7 @@ int main(void)
             }
 
             ofstream bfout;
-            bfout.open(name2, ios::binary);
+            bfout.open(to_string(num4_) + "_" + name2, ios::binary);
             for (int k = 0; k < K; k++)
             {
                 bfout.write((char*)&h_cell.rho[k], sizeof(double));
@@ -3940,7 +3945,7 @@ int main(void)
             }
             bfout.close();
 
-            bfout.open("Bn_gran_" + name2, ios::binary);
+            bfout.open(to_string(num4_) + "_" + "Bn_gran_" + name2, ios::binary);
             for (int k = 0; k < hFaceCount; k++)
             {
                 bfout.write((char*)&h_hFace.Bn[k], sizeof(double));
@@ -3950,16 +3955,11 @@ int main(void)
                 bfout.write((char*)&h_vFace.Bn[k], sizeof(double));
             }
             bfout.close();
-
-            std::ofstream fout_extra("time_" + name2, std::ios::binary);
-            fout_extra.write(reinterpret_cast<const char*>(&host_all_T), sizeof(double));
-            fout_extra.close();
+            num4_++;
         }
 
 
         if (host_all_T * time_razmer > 835.0) break;
-        //if (host_all_T * time_razmer > 300.0) break;
-        //if (host_all_T * time_razmer > 125.0) break;
     }
 
     out_rashod.close();
